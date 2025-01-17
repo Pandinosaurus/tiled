@@ -22,6 +22,7 @@
 
 #include "changeevents.h"
 #include "containerhelpers.h"
+#include "documentmanager.h"
 #include "editableasset.h"
 #include "logginginterface.h"
 #include "object.h"
@@ -34,30 +35,46 @@
 
 namespace Tiled {
 
-QHash<QString, Document*> Document::sDocumentInstances;
-
 Document::Document(DocumentType type, const QString &fileName,
                    QObject *parent)
     : QObject(parent)
     , mType(type)
     , mFileName(fileName)
-    , mCanonicalFilePath(QFileInfo(mFileName).canonicalFilePath())
     , mUndoStack(new QUndoStack(this))
 {
-    if (!mCanonicalFilePath.isEmpty())
-        sDocumentInstances.insert(mCanonicalFilePath, this);
+    const QFileInfo fileInfo { fileName };
+    mLastSaved = fileInfo.lastModified();
+    mCanonicalFilePath = fileInfo.canonicalFilePath();
+    mReadOnly = fileInfo.exists() && !fileInfo.isWritable();
 
-    connect(mUndoStack, &QUndoStack::indexChanged, this, &Document::updateModifiedChanged);
-    connect(mUndoStack, &QUndoStack::cleanChanged, this, &Document::updateModifiedChanged);
+    if (auto manager = DocumentManager::maybeInstance())
+        manager->registerDocument(this);
+
+    connect(mUndoStack, &QUndoStack::indexChanged, this, &Document::updateIsModified);
+    connect(mUndoStack, &QUndoStack::cleanChanged, this, &Document::updateIsModified);
 }
 
 Document::~Document()
 {
-    if (!mCanonicalFilePath.isEmpty()) {
-        auto i = sDocumentInstances.find(mCanonicalFilePath);
-        if (i != sDocumentInstances.end() && *i == this)
-            sDocumentInstances.erase(i);
-    }
+    // Disconnect early to avoid being called on our own destroy signal
+    if (mCurrentObjectDocument)
+        mCurrentObjectDocument->disconnect(this);
+
+    if (auto manager = DocumentManager::maybeInstance())
+        manager->unregisterDocument(this);
+}
+
+EditableAsset *Document::editable()
+{
+    if (!mEditable)
+        mEditable = createEditable();
+    return mEditable.get();
+}
+
+void Document::setEditable(std::unique_ptr<EditableAsset> editable)
+{
+    mEditable = std::move(editable);
+    mEditable->setDocument(this);
 }
 
 void Document::setFileName(const QString &fileName)
@@ -67,24 +84,21 @@ void Document::setFileName(const QString &fileName)
 
     QString oldFileName = mFileName;
 
-    if (!mCanonicalFilePath.isEmpty()) {
-        auto i = sDocumentInstances.find(mCanonicalFilePath);
-        if (i != sDocumentInstances.end() && *i == this)
-            sDocumentInstances.erase(i);
-    }
+    DocumentManager::instance()->unregisterDocument(this);
 
+    const QFileInfo fileInfo { fileName };
     mFileName = fileName;
-    mCanonicalFilePath = QFileInfo(fileName).canonicalFilePath();
+    mCanonicalFilePath = fileInfo.canonicalFilePath();
+    setReadOnly(fileInfo.exists() && !fileInfo.isWritable());
 
-    if (!mCanonicalFilePath.isEmpty())
-        sDocumentInstances.insert(mCanonicalFilePath, this);
+    DocumentManager::instance()->registerDocument(this);
 
     emit fileNameChanged(fileName, oldFileName);
 }
 
 void Document::checkFilePathProperties(const Object *object) const
 {
-    auto &props = object->properties();
+    const auto &props = object->properties();
 
     for (auto i = props.begin(), i_end = props.end(); i != i_end; ++i) {
         if (i.value().userType() == filePathTypeId()) {
@@ -131,6 +145,7 @@ void Document::setCurrentObject(Object *object, Document *owningDocument)
 
     emit currentObjectSet(object);
     emit currentObjectChanged(object);
+    emit currentObjectsChanged();
 }
 
 /**
@@ -145,6 +160,10 @@ void Document::setCurrentObject(Object *object, Document *owningDocument)
 void Document::currentObjectDocumentChanged(const ChangeEvent &change)
 {
     switch (change.type) {
+    case ChangeEvent::DocumentAboutToReload:
+        setCurrentObject(nullptr);
+        break;
+
     case ChangeEvent::TilesAboutToBeRemoved: {
         auto tilesEvent = static_cast<const TilesEvent&>(change);
 
@@ -185,7 +204,7 @@ void Document::currentObjectDocumentDestroyed()
     setCurrentObject(nullptr);
 }
 
-void Document::updateModifiedChanged()
+bool Document::isModifiedImpl() const
 {
     const QUndoStack &undo = *undoStack();
     const int cleanIndex = undo.cleanIndex();
@@ -212,6 +231,13 @@ void Document::updateModifiedChanged()
             }
         }
     }
+
+    return modified;
+}
+
+void Document::updateIsModified()
+{
+    const bool modified = isModifiedImpl();
 
     if (mModified != modified) {
         mModified = modified;
@@ -241,6 +267,25 @@ void Document::setProperty(Object *object,
         emit propertyAdded(object, name);
 }
 
+void Document::setPropertyMember(Object *object,
+                                 const QStringList &path,
+                                 const QVariant &value)
+{
+    Q_ASSERT(!path.isEmpty());
+    auto &topLevelName = path.first();
+
+    if (path.size() == 1)
+        return setProperty(object, topLevelName, value);
+
+    // Take the resolved property since we may not have this property yet
+    // when we want to override it with a changed member.
+    auto topLevelValue = object->resolvedProperty(topLevelName);
+    if (!setClassPropertyMemberValue(topLevelValue, 1, path, value))
+        return;
+
+    setProperty(object, topLevelName, topLevelValue);
+}
+
 void Document::setProperties(Object *object, const Properties &properties)
 {
     object->setProperties(properties);
@@ -265,6 +310,15 @@ void Document::setIgnoreBrokenLinks(bool ignoreBrokenLinks)
 void Document::setChangedOnDisk(bool changedOnDisk)
 {
     mChangedOnDisk = changedOnDisk;
+}
+
+void Document::setReadOnly(bool readOnly)
+{
+    if (mReadOnly == readOnly)
+        return;
+
+    mReadOnly = readOnly;
+    emit isReadOnlyChanged(readOnly);
 }
 
 } // namespace Tiled

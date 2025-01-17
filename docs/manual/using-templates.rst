@@ -7,7 +7,7 @@ Using Templates
 
 Any created object can be saved as a template. These templates can then be
 instantiated elsewhere as objects that inherit the template's properties. This
-can save a lot of tedious work of setting up the object type and properties,
+can save a lot of tedious work of setting up the object class and properties,
 or even just finding the right tile in the tileset.
 
 Each template is stored in its own file, where they can be organized in
@@ -104,8 +104,7 @@ use them, you can enable the *Detach templates* :ref:`export option
 .. topic:: Future Extensions
    :class: future
 
-    - Resetting overridden properties individually (`#1725 <https://github.com/bjorn/tiled/issues/1725>`__).
-    - Locking template properties (`#1726 <https://github.com/bjorn/tiled/issues/1726>`__).
-    - Handling wrong file paths (`#1732 <https://github.com/bjorn/tiled/issues/1732>`__).
+    - Resetting overridden properties individually (`#1725 <https://github.com/mapeditor/tiled/issues/1725>`__).
+    - Locking template properties (`#1726 <https://github.com/mapeditor/tiled/issues/1726>`__).
     - Managing the templates folder, e.g. moving, renaming or deleting a template or a sub-folder
-      (`#1723 <https://github.com/bjorn/tiled/issues/1723>`__).
+      (`#1723 <https://github.com/mapeditor/tiled/issues/1723>`__).

@@ -29,17 +29,16 @@
 #include "createpolygonobjecttool.h"
 #include "createrectangleobjecttool.h"
 #include "createtemplatetool.h"
-#include "editablemanager.h"
 #include "editablemapobject.h"
 #include "editpolygontool.h"
 #include "layermodel.h"
 #include "map.h"
 #include "mapdocument.h"
-#include "mapdocumentactionhandler.h"
 #include "mapobject.h"
 #include "mapscene.h"
 #include "mapview.h"
 #include "objectgroup.h"
+#include "objectreferencetool.h"
 #include "objectselectiontool.h"
 #include "objectsview.h"
 #include "preferences.h"
@@ -76,7 +75,7 @@ static Preference<QByteArray> splitterState { "TileCollisionDock/SplitterState" 
 TileCollisionDock::TileCollisionDock(QWidget *parent)
     : QDockWidget(parent)
     , mMapScene(new MapScene(this))
-    , mMapView(new MapView(this, MapView::NoStaticContents))
+    , mMapView(new MapView(this))
     , mObjectsView(new ObjectsView(this))
     , mToolManager(new ToolManager(this))
 {
@@ -112,6 +111,7 @@ TileCollisionDock::TileCollisionDock(QWidget *parent)
 
     mToolManager = new ToolManager(this);
     toolsToolBar->addAction(mToolManager->registerTool(new ObjectSelectionTool(this)));
+    toolsToolBar->addAction(mToolManager->registerTool(new ObjectReferenceTool(this)));
     toolsToolBar->addAction(mToolManager->registerTool(new EditPolygonTool(this)));
     toolsToolBar->addAction(mToolManager->registerTool(rectangleObjectsTool));
     toolsToolBar->addAction(mToolManager->registerTool(pointObjectsTool));
@@ -253,14 +253,13 @@ void TileCollisionDock::autoDetectMask()
     if (!mDummyMapDocument)
         return;
 
-    const QPixmap &pixmap = mTile->image();
+    const QPixmap pixmap = mTile->image().copy(mTile->imageRect());
     const QRect content = pixmap.hasAlphaChannel() ? QRegion(pixmap.mask()).boundingRect()
                                                    : pixmap.rect();
 
     // Create the rectangular collision shape
-    MapObject *newObject = new MapObject(QString(), QString(),
-                                         content.topLeft(),
-                                         content.size());
+    MapObject *newObject = new MapObject;
+    newObject->setBounds(content);
 
     ObjectGroup *objectGroup = static_cast<ObjectGroup*>(mDummyMapDocument->map()->layerAt(1));
     mDummyMapDocument->undoStack()->push(new AddMapObjects(mDummyMapDocument.data(), objectGroup, newObject));
@@ -309,7 +308,6 @@ QList<QObject *> TileCollisionDock::selectedObjectsForScript() const
     if (!mDummyMapDocument)
         return objects;
 
-    auto &editableManager = EditableManager::instance();
     auto editableTileset = mTilesetDocument->editable();
     const auto &originalObjects = mTile->objectGroup()->objects();
 
@@ -320,7 +318,7 @@ QList<QObject *> TileCollisionDock::selectedObjectsForScript() const
 
         if (it != originalObjects.end()) {
             MapObject *oo = *it;
-            objects.append(editableManager.editableMapObject(editableTileset, oo));
+            objects.append(EditableMapObject::get(editableTileset, oo));
         }
     }
 

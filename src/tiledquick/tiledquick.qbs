@@ -1,4 +1,3 @@
-import qbs 1.0
 import qbs.Environment
 import qbs.File
 
@@ -6,14 +5,13 @@ QtGuiApplication {
     name: "tiledquick"
     targetName: name
     builtByDefault: Environment.getEnv("BUILD_TILEDQUICK") == "true"
-    condition: Qt.core.versionMajor >= 6 || Qt.core.versionMinor > 10
 
     readonly property bool qtcRunnable: builtByDefault
 
     Depends {
         name: "Qt"
         submodules: ["core", "quick", "widgets"]
-        versionAtLeast: "5.10"
+        versionAtLeast: "5.15"
     }
     Depends {
         name: "tiledquickplugin"
@@ -21,8 +19,16 @@ QtGuiApplication {
     }
 
     cpp.includePaths: ["."]
-    cpp.rpaths: qbs.targetOS.contains("darwin") ? ["@loader_path/../Frameworks"] : ["$ORIGIN/../lib"]
-    cpp.cxxLanguageVersion: "c++14"
+    cpp.rpaths: qbs.targetOS.contains("darwin") ? ["@loader_path/../Frameworks"] : ["$ORIGIN/../" + project.libDir]
+    cpp.cxxLanguageVersion: "c++17"
+    cpp.cxxFlags: {
+        var flags = base;
+        if (qbs.toolchain.contains("msvc")) {
+            if (Qt.core.versionMajor >= 6 && Qt.core.versionMinor >= 3)
+                flags.push("/permissive-");
+        }
+        return flags;
+    }
 
     files: [
         "fonts/fonts.qrc",
@@ -36,24 +42,14 @@ QtGuiApplication {
         targetName: "Tiled Quick"
     }
 
-    Group {
-        condition: !qbs.targetOS.contains("darwin")
-        qbs.install: true
-        qbs.installDir: {
-            if (qbs.targetOS.contains("windows"))
-                return ""
-            else
-                return "bin"
-        }
-        fileTagsFilter: product.type
-    }
-
-    // This is necessary to install the app bundle (OS X)
-    Group {
-        fileTagsFilter: ["bundle.content"]
-        qbs.install: true
-        qbs.installDir: "."
-        qbs.installSourceBase: product.buildDirectory
+    install: true
+    installDir: {
+        if (project.windowsLayout)
+            return ""
+        else if (qbs.targetOS.contains("darwin"))
+            return "."
+        else
+            return "bin"
     }
 
     // Include libtiled.dylib in the app bundle

@@ -21,7 +21,6 @@
 #include "wangsetmodel.h"
 
 #include "changeevents.h"
-#include "containerhelpers.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "tile.h"
@@ -120,7 +119,7 @@ QVariant WangSetModel::data(const QModelIndex &index, int role) const
             return wangSet->name();
         case Qt::DecorationRole:
             if (Tile *tile = wangSet->imageTile())
-                return tile->image();
+                return tile->image().copy(tile->imageRect());
             else
                 return wangSetIcon(wangSet->type());
             break;
@@ -134,7 +133,7 @@ QVariant WangSetModel::data(const QModelIndex &index, int role) const
         case Qt::SizeHintRole:
             return QSize(1, 32);
         case Qt::FontRole: {
-            QFont font = QApplication::font();
+            QFont font;
             font.setBold(true);
             return font;
         }
@@ -259,6 +258,15 @@ void WangSetModel::onTilesetDataChanged(const QModelIndex &topLeft, const QModel
 void WangSetModel::onDocumentChanged(const ChangeEvent &change)
 {
     switch (change.type) {
+    // On tileset reload, we need to reset the model since we don't know what
+    // has changed.
+    case ChangeEvent::DocumentAboutToReload:
+        beginResetModel();
+        break;
+    case ChangeEvent::DocumentReloaded:
+        endResetModel();
+        break;
+
     case ChangeEvent::WangSetAboutToBeAdded: {
         auto wangSetEvent = static_cast<const WangSetEvent&>(change);
 

@@ -44,8 +44,9 @@ namespace Tiled {
 class AbstractTool;
 class BucketFillTool;
 class ComboBoxProxyModel;
-class EditableMap;
 class EditPolygonTool;
+class EditableMap;
+class EditableWangSet;
 class LayerDock;
 class MapDocument;
 class MapView;
@@ -71,9 +72,11 @@ class MapEditor final : public Editor
 {
     Q_OBJECT
 
-    Q_PROPERTY(Tiled::TilesetDock *tilesetsView READ tilesetDock)
-    Q_PROPERTY(Tiled::EditableMap *currentBrush READ currentBrush WRITE setCurrentBrush)
-    Q_PROPERTY(Tiled::MapView *currentMapView READ currentMapView)
+    Q_PROPERTY(Tiled::TilesetDock *tilesetsView READ tilesetDock CONSTANT)
+    Q_PROPERTY(Tiled::EditableMap *currentBrush READ currentBrush WRITE setCurrentBrush NOTIFY currentBrushChanged)
+    Q_PROPERTY(Tiled::EditableWangSet *currentWangSet READ currentWangSet WRITE setCurrentWangSet NOTIFY currentWangSetChanged)
+    Q_PROPERTY(int currentWangColorIndex READ currentWangColorIndex WRITE setCurrentWangColorIndex NOTIFY currentWangColorIndexChanged)
+    Q_PROPERTY(Tiled::MapView *currentMapView READ currentMapView CONSTANT)
 
 public:
     explicit MapEditor(QObject *parent = nullptr);
@@ -116,12 +119,23 @@ public:
     EditableMap *currentBrush() const;
     void setCurrentBrush(EditableMap *editableMap);
 
+    EditableWangSet *currentWangSet() const;
+    void setCurrentWangSet(EditableWangSet *wangSet);
+
+    int currentWangColorIndex() const;
+    void setCurrentWangColorIndex(int newIndex);
+
     void addExternalTilesets(const QStringList &fileNames);
 
     QAction *actionSelectNextTileset() const;
     QAction *actionSelectPreviousTileset() const;
 
     AbstractTool *selectedTool() const;
+
+signals:
+    void currentBrushChanged();
+    void currentWangSetChanged();
+    void currentWangColorIndexChanged(int colorIndex);
 
 private:
     void setSelectedTool(AbstractTool *tool);
@@ -149,6 +163,7 @@ private:
     void updateLayerComboIndex();
 
     void setupQuickStamps();
+    void setUseOpenGL(bool useOpenGL);
     void retranslateUi();
     void showTileCollisionShapesChanged(bool enabled);
     void parallaxEnabledChanged(bool enabled);

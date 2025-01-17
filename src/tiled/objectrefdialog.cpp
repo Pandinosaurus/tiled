@@ -27,7 +27,7 @@
 #include "mapdocument.h"
 #include "mapobject.h"
 #include "mapobjectmodel.h"
-#include "reversingrecursivefiltermodel.h"
+#include "reversingproxymodel.h"
 #include "objectgroup.h"
 #include "utils.h"
 
@@ -38,12 +38,22 @@
 
 namespace Tiled {
 
-class ImmutableMapObjectProxyModel : public ReversingRecursiveFilterModel
+MapObject *DisplayObjectRef::object() const
+{
+    if (!mapDocument || ref.id <= 0)
+        return nullptr;
+    return mapDocument->map()->findObjectById(ref.id);
+}
+
+
+class ImmutableMapObjectProxyModel : public ReversingProxyModel
 {
 public:
     ImmutableMapObjectProxyModel(QObject *parent = nullptr)
-        : ReversingRecursiveFilterModel(parent)
-    {}
+        : ReversingProxyModel(parent)
+    {
+        setRecursiveFilteringEnabled(true);
+    }
 
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override
     {
@@ -51,12 +61,12 @@ public:
         if (role == Qt::CheckStateRole)
             return QVariant();
 
-        return ReversingRecursiveFilterModel::data(index, role);
+        return ReversingProxyModel::data(index, role);
     }
 
     Qt::ItemFlags flags(const QModelIndex &index) const override
     {
-        auto flags = ReversingRecursiveFilterModel::flags(index);
+        auto flags = ReversingProxyModel::flags(index);
 
         // Make layers unselectable.
         if (auto mapModel = qobject_cast<MapObjectModel*>(sourceModel())) {
@@ -88,7 +98,7 @@ ObjectsTreeView::ObjectsTreeView(MapDocument *mapDocument, QWidget *parent)
     hideColumn(MapObjectModel::Position);
     header()->setStretchLastSection(false);
     header()->setSectionResizeMode(MapObjectModel::Name, QHeaderView::Stretch);
-    header()->setSectionResizeMode(MapObjectModel::Type, QHeaderView::Stretch);
+    header()->setSectionResizeMode(MapObjectModel::Class, QHeaderView::Stretch);
     header()->setSectionResizeMode(MapObjectModel::Id, QHeaderView::ResizeToContents);
 }
 
@@ -170,9 +180,6 @@ ObjectRefDialog::ObjectRefDialog(const DisplayObjectRef &startingValue, QWidget 
     , mUi(new Ui::ObjectRefDialog)
     , mValue(startingValue)
 {
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-#endif
     mUi->setupUi(this);
 
     mMapObjectsView = new ObjectsTreeView(mValue.mapDocument, this);

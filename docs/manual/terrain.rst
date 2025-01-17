@@ -16,7 +16,7 @@ editing tile maps easier in such cases.
     defined in Tiled 1.5 can't be used by older versions.*
 
 The Terrain Brush relies on the tileset providing one or more *Terrain Sets* -
-sets of tiles labelled according to their terrain layouts. Tiled supports the
+sets of tiles labeled according to their terrain layouts. Tiled supports the
 following terrain sets:
 
 .. figure:: images/terrain/corner-set.png
@@ -49,7 +49,7 @@ Mixed Set
 Based on the information in a terrain set, the :ref:`terrain-tool` can
 understand the map and automatically choose the right tiles when making edits.
 When necessary, it also adjusts neighboring tiles to make sure they correctly
-connect to the modified area.
+connect to the modified area. A terrain set can contain up to 254 terrains.
 
 The :ref:`stamp-tool`, as well as the :ref:`bucket-fill-tool` and the
 :ref:`shape-fill-tool`, also have a mode where they can :ref:`fill an area with
@@ -107,9 +107,21 @@ as Terrain Image".
 
 .. note::
 
+    .. image:: images/terrain/transition-to-empty.png
+       :alt: Set of forest tiles that transition to empty, where the parts of each tile that represent the forest are labelled with a red terrain, and the empty parts are not labelled.
+       :align: right
+       :scale: 60%
+       :class: no-bottom-margin
+
     We generally don't need to define an explicit terrain for "empty tiles".
     If you have tiles transitioning to nothing, it should be enough to not
     mark those areas.
+
+    (Example © Game Shovel LLC, license: MIT)
+
+    .. raw:: html
+
+       <div style="clear: both"></div>
 
 With our terrains set up we're ready to mark each of our tiles.
 
@@ -240,7 +252,7 @@ well as terrains have a *Probability* property, which can be used to change
 the frequency with which a certain tile or terrain is chosen compared to other
 valid options.
 
-The relative probability of a tile is the product of its own propability and
+The relative probability of a tile is the product of its own probability and
 the probability of the terrain at each corner and/or side.
 
 .. figure:: images/terrain/low-and-high-probability.png
@@ -280,7 +292,7 @@ the tiles we need to exit the *Terrain Sets* mode.
 
 .. raw:: html
 
-    <div class="new">New in Tiled 1.5</div>
+    <div class="new new-prev">Since Tiled 1.5</div>
 
 Tile Transformations
 --------------------
@@ -335,7 +347,7 @@ your own project. A few things to keep in mind:
   the terrain overlay is displayed correctly, set up the *Orientation*,
   *Grid Width* and *Grid Height* in the tileset properties.
 
-- The tool will handle any number of terrains (up to 255) and each corner of a
+- The tool will handle any number of terrains (up to 254) and each corner of a
   tile can have a different type of terrain. Still, there are other ways of
   dealing with transitions that this tool can't handle. Also, it is not able
   to edit multiple layers at the same time. For a more flexible, but also more
@@ -346,9 +358,9 @@ your own project. A few things to keep in mind:
   transitions that are compatible with this tool on `OpenGameArt.org
   <http://opengameart.org/>`__.
 
-.. _blob tileset: http://www.cr31.co.uk/stagecast/wang/blob.html
+.. _blob tileset: https://web.archive.org/web/20230101/cr31.co.uk/stagecast/wang/blob.html
 
-.. |terrain| image:: ../../src/tiled/images/24/terrain.png
+.. |terrain| image:: ../../src/tiled/resources/images/24/terrain.png
 
 ..
     TODO:
@@ -359,4 +371,4 @@ your own project. A few things to keep in mind:
     * An image showing what a click replacing one corner would initially do (change the corner label)
     * An image showing what Tiled does to remedy this (adjust the surrounding corners), showing the different tiles placed underneath
 
-    Optionally, a similar sequence of images showing a Ctrl click. Original -> all corners changed -> neighbouring corners adjusted.
+    Optionally, a similar sequence of images showing a Ctrl click. Original -> all corners changed -> neighboring corners adjusted.

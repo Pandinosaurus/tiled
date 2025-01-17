@@ -22,17 +22,19 @@
 #include "ui_preferencesdialog.h"
 
 #include "abstractobjecttool.h"
+#include "editor.h"
 #include "languagemanager.h"
+#include "mapobjectitem.h"
 #include "mapview.h"
 #include "pluginlistmodel.h"
 #include "preferences.h"
 #include "scriptmanager.h"
+#ifdef TILED_SENTRY
 #include "sentryhelper.h"
+#endif
 
 #include <QDesktopServices>
 #include <QSortFilterProxyModel>
-
-#include "qtcompat_p.h"
 
 using namespace Tiled;
 
@@ -42,9 +44,6 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     , mLanguages(LanguageManager::instance()->availableLanguages())
 {
     mUi->setupUi(this);
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-#endif
 
 #if defined(QT_NO_OPENGL)
     mUi->openGL->setEnabled(false);
@@ -52,7 +51,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     mUi->openGL->setEnabled(true);
 #endif
 
-    for (const QString &name : qAsConst(mLanguages)) {
+    for (const QString &name : std::as_const(mLanguages)) {
         QLocale locale(name);
         QString string = QStringLiteral("%1 (%2)")
             .arg(QLocale::languageToString(locale.language()),
@@ -73,8 +72,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
                                                   tr("Prefer Selected Layers"),
                                                   tr("Selected Layers Only") });
 
-    PluginListModel *pluginListModel = new PluginListModel(this);
-    QSortFilterProxyModel *pluginProxyModel = new QSortFilterProxyModel(this);
+    auto *pluginListModel = new PluginListModel(this);
+    auto *pluginProxyModel = new QSortFilterProxyModel(this);
     pluginProxyModel->setSortLocaleAware(true);
     pluginProxyModel->setSortCaseSensitivity(Qt::CaseInsensitive);
     pluginProxyModel->setSourceModel(pluginListModel);
@@ -113,8 +112,10 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
         Sentry::instance()->setUserConsent(value ? Sentry::ConsentGiven : Sentry::ConsentRevoked);
     });
     mUi->crashReportingLabel->setOpenExternalLinks(true);
+    mUi->crashReportingAndUpdates->setTitle(tr("Updates and Crash Reporting"));
 #else
-    mUi->crashReporting->setVisible(false);
+    mUi->sendCrashReports->setVisible(false);
+    mUi->crashReportingLabel->setVisible(false);
 #endif
 
     connect(mUi->languageCombo, static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
@@ -125,10 +126,14 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             preferences, &Preferences::setBackgroundFadeColor);
     connect(mUi->gridFine, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
             preferences, &Preferences::setGridFine);
-    connect(mUi->gridMajor, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
-            preferences, &Preferences::setGridMajor);
+    connect(mUi->gridMajorX, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
+            preferences, &Preferences::setGridMajorX);
+    connect(mUi->gridMajorY, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
+            preferences, &Preferences::setGridMajorY);
     connect(mUi->objectLineWidth, static_cast<void(QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged),
             preferences, &Preferences::setObjectLineWidth);
+    connect(mUi->preciseTileObjectSelection, &QCheckBox::toggled,
+            this, [] (bool checked) { MapObjectItem::preciseTileObjectSelection = checked; });
     connect(mUi->openGL, &QCheckBox::toggled,
             preferences, &Preferences::setUseOpenGL);
     connect(mUi->wheelZoomsByDefault, &QCheckBox::toggled,
@@ -137,6 +142,8 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             this, [] (bool checked) { MapView::ourAutoScrollingEnabled = checked; });
     connect(mUi->smoothScrolling, &QCheckBox::toggled,
             this, [] (bool checked) { MapView::ourSmoothScrollingEnabled = checked; });
+    connect(mUi->duplicateAddsCopy, &QCheckBox::toggled,
+            this, [] (bool checked) { Editor::duplicateAddsCopy = checked; });
 
     connect(mUi->styleCombo, static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
             this, &PreferencesDialog::styleComboChanged);
@@ -146,6 +153,17 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
             preferences, &Preferences::setBaseColor);
     connect(mUi->selectionColor, &ColorButton::colorChanged,
             preferences, &Preferences::setSelectionColor);
+
+    connect(mUi->fontGroupBox, &QGroupBox::toggled,
+            preferences, &Preferences::setUseCustomFont);
+    connect(mUi->fontComboBox, &QFontComboBox::currentFontChanged,
+            preferences, &Preferences::setCustomFont);
+    connect(mUi->fontSize, static_cast<void(QSpinBox::*)(int)>(&QSpinBox::valueChanged),
+            this, [=] (int size) {
+        QFont font = mUi->fontComboBox->currentFont();
+        font.setPointSize(size);
+        mUi->fontComboBox->setCurrentFont(font);
+    });
 
     connect(mUi->displayNewsCheckBox, &QCheckBox::toggled,
             preferences, &Preferences::setDisplayNews);
@@ -158,7 +176,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent)
     const QString &extensionsPath = ScriptManager::instance().extensionsPath();
     mUi->extensionsPathEdit->setText(extensionsPath);
     mUi->openExtensionsPathButton->setEnabled(!extensionsPath.isEmpty());
-    connect(mUi->openExtensionsPathButton, &QPushButton::clicked, this, [&] {
+    connect(mUi->openExtensionsPathButton, &QPushButton::clicked, this, [=] {
         QDesktopServices::openUrl(QUrl::fromLocalFile(extensionsPath));
     });
 
@@ -211,11 +229,18 @@ void PreferencesDialog::fromPreferences()
 #endif
 
     // Interface
+    mUi->preciseTileObjectSelection->setChecked(MapObjectItem::preciseTileObjectSelection);
     if (mUi->openGL->isEnabled())
         mUi->openGL->setChecked(prefs->useOpenGL());
     mUi->wheelZoomsByDefault->setChecked(prefs->wheelZoomsByDefault());
     mUi->autoScrolling->setChecked(MapView::ourAutoScrollingEnabled);
     mUi->smoothScrolling->setChecked(MapView::ourSmoothScrollingEnabled);
+    mUi->duplicateAddsCopy->setChecked(Editor::duplicateAddsCopy);
+
+    const QFont customFont = prefs->customFont();
+    mUi->fontGroupBox->setChecked(prefs->useCustomFont());
+    mUi->fontComboBox->setCurrentFont(customFont);
+    mUi->fontSize->setValue(customFont.pointSize());
 
     // Not found (-1) ends up at index 0, system default
     int languageIndex = mUi->languageCombo->findData(prefs->language());
@@ -225,7 +250,8 @@ void PreferencesDialog::fromPreferences()
     mUi->gridColor->setColor(prefs->gridColor());
     mUi->backgroundFadeColor->setColor(prefs->backgroundFadeColor());
     mUi->gridFine->setValue(prefs->gridFine());
-    mUi->gridMajor->setValue(prefs->gridMajor());
+    mUi->gridMajorX->setValue(prefs->gridMajor().width());
+    mUi->gridMajorY->setValue(prefs->gridMajor().height());
     mUi->objectLineWidth->setValue(prefs->objectLineWidth());
 
     // Updates

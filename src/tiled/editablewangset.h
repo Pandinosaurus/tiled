@@ -39,7 +39,7 @@ class EditableWangSet : public EditableObject
     Q_PROPERTY(Type type READ type WRITE setType)
     Q_PROPERTY(Tiled::EditableTile *imageTile READ imageTile WRITE setImageTile)
     Q_PROPERTY(int colorCount READ colorCount WRITE setColorCount)
-    Q_PROPERTY(Tiled::EditableTileset *tileset READ tileset)
+    Q_PROPERTY(Tiled::EditableTileset *tileset READ tileset CONSTANT)
 
 public:
     enum Type {
@@ -63,6 +63,11 @@ public:
     Q_INVOKABLE QJSValue wangId(Tiled::EditableTile *tile);
     Q_INVOKABLE void setWangId(Tiled::EditableTile *tile, QJSValue value);
 
+    Q_INVOKABLE QString colorName(int colorIndex) const;
+    Q_INVOKABLE void setColorName(int colorIndex, const QString &name);
+
+    Q_INVOKABLE Type effectiveTypeForColor(int color) const;
+
     void setName(const QString &name);
     void setType(Type type);
     void setImageTile(Tiled::EditableTile *imageTile);
@@ -72,8 +77,12 @@ public:
 
     void detach();
     void attach(EditableTileset *tileset);
-    void hold();
-    void release();
+    void hold(std::unique_ptr<WangSet> wangSet);
+
+    static EditableWangSet *find(WangSet *wangSet);
+    static EditableWangSet *get(WangSet *wangSet);
+    static EditableWangSet *get(EditableTileset *tileset, WangSet *wangSet);
+    static void release(std::unique_ptr<WangSet> wangSet);
 
 private:
     TilesetDocument *tilesetDocument() const;
@@ -97,11 +106,19 @@ inline int EditableWangSet::colorCount() const
     return wangSet()->colorCount();
 }
 
+inline EditableWangSet::Type EditableWangSet::effectiveTypeForColor(int color) const
+{
+    return static_cast<Type>(wangSet()->effectiveTypeForColor(color));
+}
+
 inline WangSet *EditableWangSet::wangSet() const
 {
     return static_cast<WangSet*>(object());
 }
 
-} // namespace Tiled
+inline EditableWangSet *EditableWangSet::find(WangSet *wangSet)
+{
+    return static_cast<EditableWangSet*>(EditableObject::find(wangSet));
+}
 
-Q_DECLARE_METATYPE(Tiled::EditableWangSet*)
+} // namespace Tiled

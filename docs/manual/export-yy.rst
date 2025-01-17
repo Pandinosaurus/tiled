@@ -2,13 +2,13 @@
 
 .. raw:: html
 
-    <div class="new">New in Tiled 1.5</div>
+    <div class="new new-prev">Since Tiled 1.5</div>
 
-GameMaker Studio 2.3
-====================
+GameMaker
+=========
 
-GameMaker Studio 2.3 uses a JSON-based format to store its rooms, and Tiled
-ships with a plugin to export maps in this format.
+GameMaker uses a JSON-based format to store its rooms, and Tiled ships with a
+plugin to export maps in this format.
 
 This plugin will do its best to export the map as accurately as possible,
 mapping Tiled's various features to the matching GameMaker features.
@@ -20,13 +20,13 @@ as background layers.
 
 .. warning::
 
-   Since GameMaker's "Add Existing" action doesn't work at this point in time
-   (2.3.1) the easiest way to export a Tiled map to your GameMaker Project is
-   to overwrite an already existing ``room.yy`` file.
+   Since it's not possible to add a room to a project by selecting a .yy file,
+   the easiest way to export a Tiled map to your GameMaker project is to create
+   a new room in GameMaker and then overwrite its ``room.yy`` file when
+   exporting from Tiled.
 
-   Starting with Tiled 1.8, it is no longer necessary to deactivate the "Use
-   safe writing of files" option, since the GameMaker export now ignores it to
-   avoid reload issues in GameMaker.
+   In 2024, GameMaker made minor but incompatible changes to its file format.
+   Tiled 1.12 ships with an updated plugin that uses the new format.
 
 .. _yy-asset-references:
 
@@ -51,7 +51,7 @@ tilesets and image layers).
 For tilesets, the tileset name entered in Tiled must match the name of the
 tileset asset in GameMaker.
 
-For object instances, the name of the object should be set in the *Type*
+For object instances, the name of the object should be set in the *Class*
 field.
 
 Exporting a Tiled Map
@@ -88,12 +88,12 @@ Object layers in Tiled are very flexible since objects take so many forms. As
 such the export looks at each object to see how it should be exported to the
 GameMaker room.
 
-When an object has a *Type*, it is exported as an instance on an instance
-layer, where the type refers to the name of the object to instantiate. Except,
-when the type is "view", the object is interpreted as :ref:`a view
+When an object has a *Class*, it is exported as an instance on an instance
+layer, where the class refers to the name of the object to instantiate. Except,
+when the class is "view", the object is interpreted as :ref:`a view
 <yy-views>`.
 
-When an object has no Type, but it is a tile object, then it is exported as
+When an object has no Class, but it is a tile object, then it is exported as
 either a tile graphic or a sprite graphic, depending on whether the tile is
 from a tileset image or a collection of images.
 
@@ -120,8 +120,8 @@ position of the exported instance.
 
 .. hint::
 
-   Of course setting the type and/or the above properties manually for each
-   instance will get old fast. Instead you can use tile objects with the type
+   Of course setting the class and/or the above properties manually for each
+   instance will get old fast. Instead you can use tile objects with the class
    set on the tile or use :doc:`object templates <using-templates>`.
 
 Object Instances
@@ -151,7 +151,7 @@ object.
 
 .. note::
 
-    As of now only variable definitions of the object itself can be overriden.
+    As of now only variable definitions of the object itself can be overridden.
     Overriding variable definitions of parent objects is not supported. As a
     workaround you can use the creation code to override variables of a parent
     object.
@@ -292,7 +292,7 @@ Views
 ~~~~~
 
 Views can be defined using :ref:`rectangle objects <insert-rectangle-tool>`
-where the *Type* has been set to "view". The position and size will be snapped
+where the *Class* has been set to "view". The position and size will be snapped
 to pixels. Whether the view is visible when the room starts depends on whether
 the object is visible. The use of views is automatically enabled when any
 views are defined.
@@ -327,7 +327,7 @@ the view object.
 .. hint::
 
    When you're defining views in Tiled, it is useful to add ``view``
-   as object type in the :ref:`Object Types Editor <predefining-properties>`,
+   as class in the :ref:`Custom Types Editor <custom-property-types>`,
    adding the above properties for ease of access. If you frequently use
    views with similar settings, you can set up
    :doc:`templates <using-templates>` for them.

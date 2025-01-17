@@ -20,11 +20,9 @@
 
 #include "mapeditor.h"
 
-#include "actionmanager.h"
-#include "addremovelayer.h"
 #include "addremovetileset.h"
-#include "brokenlinks.h"
 #include "bucketfilltool.h"
+#include "changeselectedarea.h"
 #include "createellipseobjecttool.h"
 #include "createobjecttool.h"
 #include "createpointobjecttool.h"
@@ -35,9 +33,9 @@
 #include "createtileobjecttool.h"
 #include "documentmanager.h"
 #include "editablemap.h"
+#include "editablewangset.h"
 #include "editpolygontool.h"
 #include "eraser.h"
-#include "filechangedwarning.h"
 #include "layerdock.h"
 #include "layermodel.h"
 #include "layeroffsettool.h"
@@ -52,8 +50,7 @@
 #include "objectreferencetool.h"
 #include "objectsdock.h"
 #include "objectselectiontool.h"
-#include "objecttemplate.h"
-#include "painttilelayer.h"
+#include "objecttemplate.h"         // used when compiling against Qt 5
 #include "preferences.h"
 #include "propertiesdock.h"
 #include "reversingproxymodel.h"
@@ -76,10 +73,9 @@
 #include "undodock.h"
 #include "wangbrush.h"
 #include "wangdock.h"
-#include "wangset.h"
 #include "zoomable.h"
-#include "worldmovemaptool.h"
 #include "worldmanager.h"
+#include "worldmovemaptool.h"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -93,8 +89,7 @@
 #include <QStackedWidget>
 #include <QToolBar>
 #include <QUndoGroup>
-
-#include "qtcompat_p.h"
+#include <QWindow>
 
 #include <memory>
 
@@ -169,10 +164,10 @@ MapEditor::MapEditor(QObject *parent)
     mMainWindow->setCentralWidget(mWidgetStack);
 
     mToolsToolBar = new QToolBar(mMainWindow);
-    mToolsToolBar->setObjectName(QLatin1String("toolsToolBar"));
+    mToolsToolBar->setObjectName(QStringLiteral("toolsToolBar"));
 
     mToolSpecificToolBar = new QToolBar(mMainWindow);
-    mToolSpecificToolBar->setObjectName(QLatin1String("toolSpecificToolBar"));
+    mToolSpecificToolBar->setObjectName(QStringLiteral("toolSpecificToolBar"));
 
     mStampBrush = new StampBrush(this);
     mWangBrush = new WangBrush(this);
@@ -211,7 +206,7 @@ MapEditor::MapEditor(QObject *parent)
     mToolsToolBar->addAction(mToolManager->registerTool(new LayerOffsetTool(this)));
     mToolsToolBar->addSeparator();  // todo: hide when there are no tool extensions
 
-    const auto tools = PluginManager::instance()->objects<AbstractTool>();
+    const auto tools = PluginManager::objects<AbstractTool>();
     for (auto tool : tools)
         mToolsToolBar->addAction(mToolManager->registerTool(tool));
 
@@ -277,12 +272,16 @@ MapEditor::MapEditor(QObject *parent)
             mStampBrush, &StampBrush::setWangSet);
     connect(mWangDock, &WangDock::currentWangSetChanged,
             mWangBrush, &WangBrush::wangSetChanged);
+    connect(mWangDock, &WangDock::currentWangSetChanged,
+            this, &MapEditor::currentWangSetChanged);
+    connect(mWangDock, &WangDock::wangColorChanged,
+            this, &MapEditor::currentWangColorIndexChanged);
     connect(mWangDock, &WangDock::selectWangBrush,
             this, &MapEditor::selectWangBrush);
     connect(mWangDock, &WangDock::wangColorChanged,
             mWangBrush, &WangBrush::setColor);
     connect(mWangBrush, &WangBrush::colorCaptured,
-            mWangDock, &WangDock::onColorCaptured);
+            mWangDock, &WangDock::setCurrentWangColor);
 
     connect(mTileStampsDock, &TileStampsDock::setStamp,
             this, &MapEditor::setStamp);
@@ -295,6 +294,7 @@ MapEditor::MapEditor(QObject *parent)
     retranslateUi();
 
     Preferences *prefs = Preferences::instance();
+    connect(prefs, &Preferences::useOpenGLChanged, this, &MapEditor::setUseOpenGL);
     connect(prefs, &Preferences::languageChanged, this, &MapEditor::retranslateUi);
     connect(prefs, &Preferences::showTileCollisionShapesChanged,
             this, &MapEditor::showTileCollisionShapesChanged);
@@ -330,6 +330,13 @@ void MapEditor::addDocument(Document *document)
 {
     MapDocument *mapDocument = qobject_cast<MapDocument*>(document);
     Q_ASSERT(mapDocument);
+
+    // Some file state settings need to be restored before the map becomes current
+    const QVariantMap fileState = Session::current().fileState(mapDocument->fileName());
+    if (!fileState.isEmpty()) {
+        mapDocument->expandedGroupLayers = fromSettingsValue<QSet<int>>(fileState.value(QStringLiteral("expandedGroupLayers")));
+        mapDocument->expandedObjectLayers = fromSettingsValue<QSet<int>>(fileState.value(QStringLiteral("expandedObjectLayers")));
+    }
 
     MapView *view = new MapView(mWidgetStack);
     MapScene *scene = new MapScene(view); // scene is owned by the view
@@ -434,9 +441,9 @@ void MapEditor::setCurrentDocument(Document *document)
         mapScene->setSelectedTool(mSelectedTool);
 
         if (mSelectedTool)
-            mapView->viewport()->setCursor(mSelectedTool->cursor());
+            mapView->setToolCursor(mSelectedTool->cursor());
         else
-            mapView->viewport()->unsetCursor();
+            mapView->unsetToolCursor();
 
         mViewWithTool = mapView;
     }
@@ -598,14 +605,17 @@ void MapEditor::saveDocumentState(MapDocument *mapDocument) const
     if (mapDocument->fileName().isEmpty())
         return;
 
-    QVariantMap fileState;
-    fileState.insert(QLatin1String("scale"), mapView->zoomable()->scale());
-
     const QRect viewportRect = mapView->viewport()->rect();
     const QPointF viewCenter = mapView->mapToScene(viewportRect).boundingRect().center();
 
-    fileState.insert(QLatin1String("viewCenter"), toSettingsValue(viewCenter));
-    fileState.insert(QLatin1String("selectedLayer"), globalIndex(mapDocument->currentLayer()));
+    QVariantMap fileState;
+    fileState.insert(QLatin1String("scale"), mapView->zoomable()->scale());
+    fileState.insert(QStringLiteral("viewCenter"), toSettingsValue(viewCenter));
+    fileState.insert(QStringLiteral("selectedLayer"), globalIndex(mapDocument->currentLayer()));
+    if (!mapDocument->expandedGroupLayers.isEmpty())
+        fileState.insert(QStringLiteral("expandedGroupLayers"), toSettingsValue(mapDocument->expandedGroupLayers));
+    if (!mapDocument->expandedObjectLayers.isEmpty())
+        fileState.insert(QStringLiteral("expandedObjectLayers"), toSettingsValue(mapDocument->expandedObjectLayers));
 
     Session::current().setFileState(mapDocument->fileName(), fileState);
 }
@@ -620,14 +630,14 @@ void MapEditor::restoreDocumentState(MapDocument *mapDocument) const
     if (fileState.isEmpty())
         return;
 
-    const qreal scale = fileState.value(QLatin1String("scale")).toReal();
+    const qreal scale = fileState.value(QStringLiteral("scale")).toReal();
     if (scale > 0)
         mapView->zoomable()->setScale(scale);
 
-    const QPointF viewCenter = fromSettingsValue<QPointF>(fileState.value(QLatin1String("viewCenter")));
+    const QPointF viewCenter = fromSettingsValue<QPointF>(fileState.value(QStringLiteral("viewCenter")));
     mapView->forceCenterOn(viewCenter);
 
-    const int layerIndex = fileState.value(QLatin1String("selectedLayer")).toInt();
+    const int layerIndex = fileState.value(QStringLiteral("selectedLayer")).toInt();
     if (Layer *layer = layerAtGlobalIndex(mapDocument->map(), layerIndex))
         mapDocument->switchCurrentLayer(layer);
 }
@@ -650,9 +660,9 @@ void MapEditor::setSelectedTool(AbstractTool *tool)
         mapScene->setSelectedTool(tool);
 
         if (tool)
-            mViewWithTool->viewport()->setCursor(tool->cursor());
+            mViewWithTool->setToolCursor(tool->cursor());
         else
-            mViewWithTool->viewport()->unsetCursor();
+            mViewWithTool->unsetToolCursor();
     }
 
     if (tool) {
@@ -717,8 +727,12 @@ void MapEditor::paste(ClipboardManager::PasteFlags flags)
     }
 
     if (hasTileLayers && !(flags & ClipboardManager::PasteInPlace)) {
-        // Reset selection and paste into the stamp brush
-        MapDocumentActionHandler::instance()->selectNone();
+        // Reset tile selection and paste into the stamp brush
+        if (!mCurrentMapDocument->selectedArea().isEmpty()) {
+            QUndoCommand *command = new ChangeSelectedArea(mCurrentMapDocument, QRegion());
+            mCurrentMapDocument->undoStack()->push(command);
+        }
+
         map->normalizeTileLayerPositionsAndMapSize();
         setStamp(TileStamp(std::move(map)));
         mToolManager->selectTool(mStampBrush);
@@ -769,10 +783,17 @@ void MapEditor::setStamp(const TileStamp &stamp)
         mToolManager->selectTool(mStampBrush);
 
     mTilesetDock->selectTilesInStamp(stamp);
+
+    emit currentBrushChanged();
 }
 
 void MapEditor::selectWangBrush()
 {
+    // Don't switch tools when the current tool also uses Wang sets
+    AbstractTool *selectedTool = mToolManager->selectedTool();
+    if (selectedTool && selectedTool->usesWangSets())
+        return;
+
     mToolManager->selectTool(mWangBrush);
 }
 
@@ -785,7 +806,7 @@ void MapEditor::currentWidgetChanged()
 void MapEditor::cursorChanged(const QCursor &cursor)
 {
     if (mViewWithTool)
-        mViewWithTool->viewport()->setCursor(cursor);
+        mViewWithTool->setToolCursor(cursor);
 }
 
 void MapEditor::updateStatusInfoLabel(const QString &statusInfo)
@@ -954,19 +975,41 @@ void MapEditor::setupQuickStamps()
 
         // Set up shortcut for selecting this quick stamp
         QShortcut *selectStamp = new QShortcut(key, mMainWindow);
-        connect(selectStamp, &QShortcut::activated, [=] { mTileStampManager->selectQuickStamp(i); });
+        connect(selectStamp, &QShortcut::activated, this, [=] { mTileStampManager->selectQuickStamp(i); });
 
         // Set up shortcut for creating this quick stamp
         QShortcut *createStamp = new QShortcut(Qt::CTRL + key, mMainWindow);
-        connect(createStamp, &QShortcut::activated, [=] { mTileStampManager->createQuickStamp(i); });
+        connect(createStamp, &QShortcut::activated, this, [=] { mTileStampManager->createQuickStamp(i); });
 
         // Set up shortcut for extending this quick stamp
         QShortcut *extendStamp = new QShortcut((Qt::CTRL | Qt::SHIFT) + key, mMainWindow);
-        connect(extendStamp, &QShortcut::activated, [=] { mTileStampManager->extendQuickStamp(i); });
+        connect(extendStamp, &QShortcut::activated, this, [=] { mTileStampManager->extendQuickStamp(i); });
     }
 
     connect(mTileStampManager, &TileStampManager::setStamp,
             this, &MapEditor::setStamp);
+}
+
+void MapEditor::setUseOpenGL(bool useOpenGL)
+{
+    for (MapView *mapView : std::as_const(mWidgetForMap))
+        mapView->setUseOpenGL(useOpenGL);
+
+    if (useOpenGL)
+        return;
+
+    // When turning off OpenGL, we may need to change the surface type back
+    // to RasterSurface, to avoid lag and improve performance.
+    if (auto w = mMainWindow->window()->windowHandle()) {
+        if (w->surfaceType() != QSurface::RasterSurface) {
+            w->setSurfaceType(QSurface::RasterSurface);
+
+            if (w->handle()) {
+                w->destroy();
+                w->show();
+            }
+        }
+    }
 }
 
 void MapEditor::retranslateUi()
@@ -977,13 +1020,13 @@ void MapEditor::retranslateUi()
 
 void MapEditor::showTileCollisionShapesChanged(bool enabled)
 {
-    for (MapView *mapView : qAsConst(mWidgetForMap))
+    for (MapView *mapView : std::as_const(mWidgetForMap))
         mapView->mapScene()->setShowTileCollisionShapes(enabled);
 }
 
 void MapEditor::parallaxEnabledChanged(bool enabled)
 {
-    for (MapView *mapView : qAsConst(mWidgetForMap))
+    for (MapView *mapView : std::as_const(mWidgetForMap))
         mapView->mapScene()->setParallaxEnabled(enabled);
 }
 
@@ -1019,7 +1062,40 @@ void MapEditor::setCurrentBrush(EditableMap *editableMap)
     setStamp(TileStamp(editableMap->map()->clone()));
 }
 
-AbstractTool *MapEditor::selectedTool() const {
+EditableWangSet *MapEditor::currentWangSet() const
+{
+    return EditableWangSet::get(mWangDock->currentWangSet());
+}
+
+void MapEditor::setCurrentWangSet(EditableWangSet *wangSet)
+{
+    if (!wangSet) {
+        ScriptManager::instance().throwNullArgError(0);
+        return;
+    }
+    mWangDock->setCurrentWangSet(wangSet->wangSet());
+}
+
+int MapEditor::currentWangColorIndex() const
+{
+    return mWangDock->currentWangColor();
+}
+
+void MapEditor::setCurrentWangColorIndex(int newIndex)
+{
+    if (!mWangDock->currentWangSet()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "No current Wang set"));
+        return;
+    }
+    if (newIndex < 0 || newIndex > mWangDock->currentWangSet()->colorCount()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "An invalid index was provided"));
+        return;
+    }
+    mWangDock->setCurrentWangColor(newIndex);
+}
+
+AbstractTool *MapEditor::selectedTool() const
+{
     return mSelectedTool;
 }
 

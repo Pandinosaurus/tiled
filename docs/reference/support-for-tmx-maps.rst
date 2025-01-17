@@ -17,7 +17,7 @@ rather pass on having to write their own tile map renderer.
 .. note::
 
    For updates to this page please open a pull request or issue
-   `on GitHub <https://github.com/bjorn/tiled/issues>`__, thanks!
+   `on GitHub <https://github.com/mapeditor/tiled/issues>`__, thanks!
 
 Support by Language
 -------------------
@@ -30,6 +30,7 @@ C
 ~
 
 -  `cute tiled <https://github.com/RandyGaul/cute_headers>`__ - JSON map loader with examples (zlib/Public Domain).
+-  `libtmj <https://github.com/Zer0-One/libtmj>`__ - JSON map and tileset loader with zlib/gzip/zstd support (BSD 2-Clause)
 -  `TMX <https://github.com/baylej/tmx/>`__ - TMX map loader
    with Allegro5 and SDL2 examples (BSD).
 
@@ -38,7 +39,7 @@ C++
 
 -  `C++/TinyXML based tmxparser <https://github.com/sainteos/tmxparser>`__ (BSD)
 -  C++/Qt based libtiled, used by Tiled itself and included at
-   `src/libtiled <https://github.com/bjorn/tiled/tree/master/src/libtiled>`__
+   `src/libtiled <https://github.com/mapeditor/tiled/tree/master/src/libtiled>`__
    (BSD)
 -  `C++11x/TinyXml2
    libtmx-parser <https://github.com/halsafar/libtmx-parser>`__ by
@@ -52,7 +53,7 @@ C++
 -  `TSXParser <https://github.com/solar-storm-studios/TSXParser>`__
    General \*.tsx tileset data loader. Intended to be used with
    TMXParser.
--  `TMXLoader <https://bitbucket.org/martingrant/tmxloader>`__ based on
+-  `TMXLoader <https://github.com/martygrant/tmxloader>`__ based on
    `RapidXml <http://rapidxml.sourceforge.net/>`__. Limited
    functionality (check the
    `website <http://www.midnightpacific.com/portfolio/tmxloader-for-tiled-map-editor/>`__
@@ -67,17 +68,24 @@ C++
 C#/.NET
 ~~~~~~~
 
--  `TiledCS <https://github.com/TheBoneJarmer/TiledCS>`__: A dotnet library for loading Tiled tilesets and maps (TMX/TSX or JSON).
+-  `DotTiled <https://github.com/dcronqvist/DotTiled>`__: A fast, memory-efficient, and easy to use .NET library for loading Tiled maps and tilesets with support for both TMX and JSON formats.
+-  `TiledLib <https://github.com/Ragath/TiledLib.Net>`__: Cross-platform Tiled map parsing utilities.
 -  `MonoGame.Extended <https://github.com/craftworkgames/MonoGame.Extended>`__
    has a Tiled map loader and renderer that works with MonoGame on all
    platforms that support portable class libraries.
 -  The following projects appear to be no longer maintained, but might still be useful:
+   `TiledCS <https://github.com/TheBoneJarmer/TiledCS>`__,
+   `TiledCSPlus <https://github.com/krnlexception/TiledCSPlus>`__,
    `TiledSharp <https://github.com/marshallward/TiledSharp>`__,
    `NTiled <https://github.com/patriksvensson/ntiled>`__,
    `tmx-mapper-pcl <https://github.com/aalmik/tmx-mapper-pcl>`__,
    `tiled-xna <https://github.com/zachmu/tiled-xna>`__ and
    `TmxCSharp <https://github.com/gwicksted/TmxCSharp>`__.
 
+Common Lisp
+~~~~~~~~~~~
+
+-  `cl-tiled <https://github.com/Zulu-Inuoe/cl-tiled/>`__: TMX/TSX and JSON map/tileset loader.
 
 Clojure
 ~~~~~~~
@@ -92,6 +100,11 @@ D
    rendering logic using `DSFML <https://github.com/Jebbs/DSFML/>`__
 -  `dtiled <https://github.com/rcorre/dtiled>`__ can load JSON-formatted Tiled
    maps. It also provides general tilemap-related functions and algorithms.
+
+Dart
+~~~~
+
+- `tiled <https://pub.dev/packages/tiled>`__: a library for loading TMX files
 
 Go
 ~~
@@ -110,7 +123,7 @@ Java
 ~~~~
 
 -  A library for loading TMX files is included with Tiled at
-   `util/java/libtiled-java <https://github.com/bjorn/tiled/tree/master/util/java/libtiled-java>`__.
+   `util/java/libtiled-java <https://github.com/mapeditor/tiled/tree/master/util/java/libtiled-java>`__.
 -  `TiledReader <http://www.alexheyman.org/tiledreader/>`__ is a simple TMX reader that conveys the information in Tiled files via a hand-crafted class structure, but does not load image data.
 -  Android-Specific:
 
@@ -120,6 +133,11 @@ Java
    -  `libtiled-java
       port <http://chiselapp.com/user/devnewton/repository/libtiled-android/index>`__
       is a port of the libtiled-java to be used on Android phones.
+
+OCaml
+~~~~~
+
+- `tmx <http://github.com/fishyfriend/tmx>`__
 
 PHP
 ~~~
@@ -142,14 +160,13 @@ Processing
 Python
 ~~~~~~
 
--  `pytiled-parser <https://github.com/benjamin-kirkbride/pytiled_parser>`__: Python parser
-   for TMX and JSON maps.
 -  `Arcade <https://api.arcade.academy>`__: 2D game library that uses pytiled-parser for
    easy loading of Tiled maps into a game. `Arcade Tiled Examples <https://api.arcade.academy/en/latest/examples/index.html#using-tiled-map-editor-to-create-maps>`_
--  `pytmxlib <http://pytmxlib.readthedocs.org/en/latest/>`__: library
-   for programmatic manipulation of TMX maps
--  `python-tmx <http://python-tmx.nongnu.org>`__: a simple library for
-   reading and writing TMX files.
+-  `pytiled-parser <https://github.com/benjamin-kirkbride/pytiled_parser>`__: Python parser for TMX and JSON maps.
+-  `pytmxlib <http://pytmxlib.readthedocs.org/en/latest/>`__: library for programmatic manipulation of TMX maps
+-  `pytmxloader <https://bitbucket.org/dr0id/pytmxloader/src/master/>`__: Python library intended to make loading of JSON Tiled maps very easy.
+-  `PyTMX <https://github.com/bitcraft/PyTMX>`__: Python library to read TMX maps.
+-  `ulvl <https://ulvl.github.io/>`__: Simple Python library that can read from, among others, TMX XML files.
 
 Ruby
 ~~~~
@@ -198,7 +215,7 @@ Bevy
 Castle Game Engine (Object Pascal)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
--  `Castle Game Engine <https://castle-engine.io/>`__ has native support for Tiled maps (see the `CastleTiledMap unit <https://castle-engine.io/apidoc-unstable/html/CastleTiledMap.html>`__)
+-  `Castle Game Engine <https://castle-engine.io/>`__ has native support for Tiled maps (see the `engine manual about Tiled Maps <https://castle-engine.io/tiled_maps>`__)
 
 Cell2D
 ~~~~~~
@@ -232,6 +249,21 @@ Construct 2 - Scirra
    file inside the editor. `Official
    Note <https://www.scirra.com/construct2/releases/r149>`__
 
+DragonRuby Game Toolkit
+~~~~~~~~~~~~~~~~~~~~~~~
+
+-  `DRTiled <https://github.com/wildfiler/drtiled>`__ adds support for loading
+   Tiled maps to the `DragonRuby Game Toolkit
+   <https://dragonruby.org/toolkit/game>`__. The maps can be rendered using
+   `DRTiled Renderer <https://github.com/vinnydiehl/drtiled-renderer>`__.
+
+Flame
+~~~~~
+
+- `flame_tiled <https://pub.dev/packages/flame_tiled>`__ is a library for
+  incorporating Tiled maps into the `Flame <https://pub.dev/packages/flame>`__
+  game engine.
+
 Flixel
 ~~~~~~
 
@@ -246,9 +278,10 @@ Game Maker
 
 Godot
 ~~~~~
-
+- Tiled ships with a plugin for exporting to :ref:`Godot 4 <godot4-export>` as .tscn scene files.
 - `Tiled Map Importer <https://godotengine.org/asset-library/asset/25>`__ imports each map as Godot scene which can be instanced or inherited (`forum announcement <http://discourse.mapeditor.org/t/importer-plugin-for-godot-engine/1833/1>`__).
-- `Tiled To Godot Export <https://github.com/MikeMnD/tiled-to-godot-export>`__ is a Tiled :doc:`JavaScript extension </reference/scripting>` for exporting Tilemaps and Tilesets in Godot 3.2 format (`forum announcement <https://discourse.mapeditor.org/t/tiled-editor-map-and-tileset-integration-with-godot-3-2/4347>`__).
+- `Godot Tiled importer (Mono version) <https://github.com/mi-sts/godot_tiled_importer>`__ imports Tiled maps exported to JSON (.tmj) format. Supports all map orientations.
+- `Tiled To Godot Export <https://github.com/MikeMnD/tiled-to-godot-export>`__ is a Tiled :doc:`JavaScript extension </manual/scripting>` for exporting Tilemaps and Tilesets in Godot 3.2 format (`forum announcement <https://discourse.mapeditor.org/t/tiled-editor-map-and-tileset-integration-with-godot-3-2/4347>`__).
 
 Grid Engine
 ~~~~~~~~~~~
@@ -310,19 +343,24 @@ indielib-crossplatform
    loading TMX maps through the `C++/TinyXML based
    tmx-parser <http://code.google.com/p/tmx-parser/>`__ by KonoM (BSD)
 
+Irrlicht
+~~~~~~~~
+
+-  `Irrlicht <https://irrlicht.sourceforge.io/>`__, a C++ realtime 3D engine, can load TMX files through a `3rd-party library <https://github.com/TheMrCerebro/irrTiled>`__ by TheMrCerebro (Zlib).
+
 LibGDX
 ~~~~~~
 
 -  `libgdx <http://libgdx.badlogicgames.com/>`__, a Java-based
    Android/desktop/HTML5 game library,
-   `provides <https://github.com/libgdx/libgdx/wiki/Tile-maps>`__ a
+   `provides <https://libgdx.com/wiki/graphics/2d/tile-maps>`__ a
    packer, loader and renderer for TMX maps
 
-LITIengine
+LITIENGINE
 ~~~~~~~~~~
 
--  `LITIengine <https://litiengine.com>`__ is a 2D Java Game Engine that
-   supports loading, saving and rendering maps in the .tmx format.
+-  `LITIENGINE <https://litiengine.com>`__ is an open source Java 2D Game Engine that
+   supports loading, editing, saving, and rendering maps in the .tmx format.
 
 LÖVE
 ~~~~

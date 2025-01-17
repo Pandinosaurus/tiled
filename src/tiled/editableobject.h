@@ -22,6 +22,7 @@
 
 #include "object.h"
 
+#include <QJSValue>
 #include <QObject>
 
 namespace Tiled {
@@ -43,6 +44,7 @@ class EditableObject : public QObject
 
     Q_PROPERTY(Tiled::EditableAsset *asset READ asset)
     Q_PROPERTY(bool readOnly READ isReadOnly)
+    Q_PROPERTY(QString className READ className WRITE setClassName)
 
 public:
     EditableObject(EditableAsset *asset,
@@ -50,10 +52,18 @@ public:
                    QObject *parent = nullptr);
 
     EditableAsset *asset() const;
+
     virtual bool isReadOnly() const;
+    bool checkReadOnly() const;
+
+    const QString &className() const;
 
     Q_INVOKABLE QVariant property(const QString &name) const;
-    Q_INVOKABLE void setProperty(const QString &name, const QVariant &value);
+    Q_INVOKABLE void setProperty(const QString &name, const QJSValue &value);
+    Q_INVOKABLE void setProperty(const QStringList &path, const QJSValue &value);
+    Q_INVOKABLE void setColorProperty(const QString &name, const QColor &value);
+    Q_INVOKABLE void setColorProperty(const QString &name, int r, int g, int b, int a = 255);
+    Q_INVOKABLE void setFloatProperty(const QString &name, qreal value);
 
     Q_INVOKABLE QVariantMap properties() const;
     Q_INVOKABLE void setProperties(const QVariantMap &properties);
@@ -69,10 +79,19 @@ public:
     void setAsset(EditableAsset *asset);
     void setObject(Object *object);
 
+    static EditableObject *find(Object *object);
+
+public slots:
+    void setClassName(const QString &type);
+
 protected:
-    bool checkReadOnly() const;
+    bool moveOwnershipToJavaScript();
+    void moveOwnershipToCpp();
 
 private:
+    void setPropertyImpl(const QString &name, const QVariant &value);
+    void setPropertyImpl(const QStringList &path, const QVariant &value);
+
     QVariant toScript(const QVariant &value) const;
     QVariant fromScript(const QVariant &value) const;
     QVariantMap toScript(const QVariantMap &value) const;
@@ -88,9 +107,39 @@ inline EditableAsset *EditableObject::asset() const
     return mAsset;
 }
 
+inline const QString &EditableObject::className() const
+{
+    return object()->className();
+}
+
 inline QVariant EditableObject::property(const QString &name) const
 {
     return toScript(mObject->property(name));
+}
+
+inline void EditableObject::setProperty(const QString &name, const QJSValue &value)
+{
+    setPropertyImpl(name, value.toVariant());
+}
+
+inline void EditableObject::setProperty(const QStringList &path, const QJSValue &value)
+{
+    setPropertyImpl(path, value.toVariant());
+}
+
+inline void EditableObject::setColorProperty(const QString &name, const QColor &value)
+{
+    setPropertyImpl(name, value);
+}
+
+inline void EditableObject::setColorProperty(const QString &name, int r, int g, int b, int a)
+{
+    setPropertyImpl(name, QColor(r, g, b, a));
+}
+
+inline void EditableObject::setFloatProperty(const QString &name, qreal value)
+{
+    setPropertyImpl(name, value);
 }
 
 inline QVariantMap EditableObject::properties() const
@@ -118,9 +167,10 @@ inline void EditableObject::setAsset(EditableAsset *asset)
     mAsset = asset;
 }
 
-inline void EditableObject::setObject(Object *object)
+inline EditableObject *EditableObject::find(Object *object)
 {
-    mObject = object;
+    return object ? static_cast<EditableObject*>(object->mEditable.data())
+                  : nullptr;
 }
 
 } // namespace Tiled

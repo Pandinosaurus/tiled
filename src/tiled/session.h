@@ -20,9 +20,12 @@
 
 #pragma once
 
+#include "tilededitor_global.h"
+
 #include <QDir>
 #include <QHash>
 #include <QPointF>
+#include <QSet>
 #include <QSettings>
 #include <QSize>
 #include <QStandardPaths>
@@ -61,8 +64,8 @@ inline QString FileHelper::relative(const QString &fileName) const
 
 inline QString FileHelper::resolve(const QString &fileName) const
 {
-    if (fileName.isEmpty())
-        return QString();
+    if (fileName.isEmpty() || fileName.startsWith(QLatin1String("ext:")))
+        return fileName;
     return QDir::cleanPath(mDir.filePath(fileName));
 }
 
@@ -113,8 +116,28 @@ inline QVariant toSettingsValue<QPointF>(const QPointF &point)
     };
 }
 
+template<>
+inline QSet<int> fromSettingsValue<QSet<int>>(const QVariant &value)
+{
+    const auto variantList = value.toList();
+    QSet<int> set;
+    for (const auto &variantValue : variantList)
+        set.insert(variantValue.value<int>());
+    return set;
+}
 
-class Session : protected FileHelper
+template<>
+inline QVariant toSettingsValue<QSet<int>>(const QSet<int> &set)
+{
+    QVariantList variantList;
+    variantList.reserve(set.size());
+    for (const int value : set)
+        variantList.append(value);
+    return variantList;
+}
+
+
+class TILED_EDITOR_EXPORT Session : protected FileHelper
 {
     std::unique_ptr<QSettings> settings;
 
@@ -145,9 +168,10 @@ public:
         ExternalTileset,
         ImageFile,
         ObjectTemplateFile,
-        ObjectTypesFile,
+        PropertyTypesFile,
         WorkingDirectory,
         WorldFile,
+        ShortcutSettingsFile,
     };
 
     QString lastPath(FileType fileType,
@@ -164,13 +188,15 @@ public:
     template <typename T>
     void set(const char *key, const T &value) const
     {
+        const QLatin1String latin1Key(key);
+        const QString stringKey(latin1Key);
         const auto settingsValue = toSettingsValue(value);
-        if (settings->value(QLatin1String(key)) == settingsValue)
+        if (settings->value(stringKey) == settingsValue)
             return;
 
-        settings->setValue(QLatin1String(key), settingsValue);
+        settings->setValue(stringKey, settingsValue);
 
-        const auto it = Session::mChangedCallbacks.constFind(key);
+        const auto it = Session::mChangedCallbacks.constFind(latin1Key);
         if (it != Session::mChangedCallbacks.constEnd())
             for (const auto &cb : it.value())
                 cb();
@@ -209,7 +235,7 @@ private:
     QTimer mSyncSettingsTimer;
 
     static std::unique_ptr<Session> mCurrent;
-    static QHash<const char*, Callbacks> mChangedCallbacks;
+    static QHash<QLatin1String, Callbacks> mChangedCallbacks;
 };
 
 inline QString Session::fileName() const
@@ -259,7 +285,7 @@ void SessionOption<T>::set(const T &value)
 template<typename T>
 Session::CallbackIterator SessionOption<T>::onChange(const Session::ChangedCallback &callback)
 {
-    Session::Callbacks &callbacks = Session::mChangedCallbacks[mKey];
+    Session::Callbacks &callbacks = Session::mChangedCallbacks[QLatin1String(mKey)];
     callbacks.push_front(callback);
     return callbacks.begin();
 }
@@ -267,7 +293,7 @@ Session::CallbackIterator SessionOption<T>::onChange(const Session::ChangedCallb
 template<typename T>
 void SessionOption<T>::unregister(Session::CallbackIterator it)
 {
-    Session::Callbacks &callbacks = Session::mChangedCallbacks[mKey];
+    Session::Callbacks &callbacks = Session::mChangedCallbacks[QLatin1String(mKey)];
     callbacks.erase(it);
 }
 

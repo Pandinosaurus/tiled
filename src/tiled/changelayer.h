@@ -20,11 +20,11 @@
 
 #pragma once
 
+#include "changevalue.h"
 #include "undocommands.h"
 
 #include <QPointF>
 #include <QSize>
-#include <QUndoCommand>
 #include <QColor>
 
 namespace Tiled {
@@ -32,166 +32,125 @@ namespace Tiled {
 class Layer;
 class TileLayer;
 
-class Document;
-
-class SetLayerName : public QUndoCommand
+class SetLayerName : public ChangeValue<Layer, QString>
 {
 public:
     SetLayerName(Document *document,
-                 Layer *layer,
+                 QList<Layer *> layers,
                  const QString &name);
 
-    void undo() override;
-    void redo() override;
+    int id() const override { return Cmd_ChangeLayerName; }
 
 private:
-    void swapName();
-
-    Document *mDocument;
-    Layer *mLayer;
-    QString mName;
+    QString getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const QString &value) const override;
 };
 
 /**
  * Used for changing layer visibility.
  */
-class SetLayerVisible : public QUndoCommand
+class SetLayerVisible : public ChangeValue<Layer, bool>
 {
 public:
     SetLayerVisible(Document *document,
-                    Layer *layer,
+                    QList<Layer *> layers,
                     bool visible);
 
-    void undo() override { swap(); }
-    void redo() override { swap(); }
+    int id() const override { return Cmd_ChangeLayerVisible; }
 
 private:
-    void swap();
-
-    Document *mDocument;
-    Layer *mLayer;
-    bool mVisible;
+    bool getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const bool &value) const override;
 };
 
 /**
  * Used for changing layer lock.
  */
-class SetLayerLocked : public QUndoCommand
+class SetLayerLocked : public ChangeValue<Layer, bool>
 {
 public:
     SetLayerLocked(Document *document,
-                   Layer *layer,
+                   QList<Layer *> layers,
                    bool locked);
 
-    void undo() override { swap(); }
-    void redo() override { swap(); }
+    int id() const override { return Cmd_ChangeLayerLocked; }
 
 private:
-    void swap();
-
-    Document *mDocument;
-    Layer *mLayer;
-    bool mLocked;
+    bool getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const bool &value) const override;
 };
 
 
 /**
  * Used for changing layer opacity.
  */
-class SetLayerOpacity : public QUndoCommand
+class SetLayerOpacity : public ChangeValue<Layer, qreal>
 {
 public:
     SetLayerOpacity(Document *document,
-                    Layer *layer,
+                    QList<Layer *> layers,
                     qreal opacity);
-
-    void undo() override { setOpacity(mOldOpacity); }
-    void redo() override { setOpacity(mNewOpacity); }
 
     int id() const override { return Cmd_ChangeLayerOpacity; }
 
-    bool mergeWith(const QUndoCommand *other) override;
-
 private:
-    void setOpacity(qreal opacity);
-
-    Document *mDocument;
-    Layer *mLayer;
-    qreal mOldOpacity;
-    qreal mNewOpacity;
+    qreal getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const qreal &value) const override;
 };
 
-class SetLayerTintColor : public QUndoCommand
+class SetLayerTintColor : public ChangeValue<Layer, QColor>
 {
 public:
     SetLayerTintColor(Document *document,
-                      Layer *layer,
+                      QList<Layer *> layers,
                       QColor tintColor);
-
-    void undo() override { setTintColor(mOldTintColor); }
-    void redo() override { setTintColor(mNewTintColor); }
 
     int id() const override { return Cmd_ChangeLayerTintColor; }
 
-    bool mergeWith(const QUndoCommand *other) override;
-
 private:
-    void setTintColor(QColor tintColor);
-
-    Document *mDocument;
-    Layer *mLayer;
-    QColor mOldTintColor;
-    QColor mNewTintColor;
+    QColor getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const QColor &value) const override;
 };
 
 /**
  * Used for changing the layer offset.
  */
-class SetLayerOffset : public QUndoCommand
+class SetLayerOffset : public ChangeValue<Layer, QPointF>
 {
 public:
     SetLayerOffset(Document *document,
-                   Layer *layer,
+                   QList<Layer *> layers,
                    const QPointF &offset,
                    QUndoCommand *parent = nullptr);
 
-    void undo() override { setOffset(mOldOffset); }
-    void redo() override { setOffset(mNewOffset); }
+    SetLayerOffset(Document *document,
+                   QList<Layer *> layers,
+                   const QVector<QPointF> &offsets,
+                   QUndoCommand *parent = nullptr);
 
     int id() const override { return Cmd_ChangeLayerOffset; }
 
 private:
-    void setOffset(const QPointF &offset);
-
-    Document *mDocument;
-    Layer *mLayer;
-    QPointF mOldOffset;
-    QPointF mNewOffset;
+    QPointF getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const QPointF &value) const override;
 };
 
 /**
  * Used for changing the layer parallax factor.
  */
-class SetLayerParallaxFactor : public QUndoCommand
+class SetLayerParallaxFactor : public ChangeValue<Layer, QPointF>
 {
 public:
     SetLayerParallaxFactor(Document *document,
-                           Layer *layer,
+                           QList<Layer *> layers,
                            const QPointF &parallaxFactor,
                            QUndoCommand *parent = nullptr);
 
-    void undo() override { setParallaxFactor(mOldParallaxFactor); }
-    void redo() override { setParallaxFactor(mNewParallaxFactor); }
-
-    int id() const override { return Cmd_ChangeLayerOffset; }
+    int id() const override { return Cmd_ChangeLayerParallaxFactor; }
 
 private:
-    void setParallaxFactor(const QPointF &parallaxFactor);
-
-    Document *mDocument;
-    Layer *mLayer;
-    QPointF mOldParallaxFactor;
-    QPointF mNewParallaxFactor;
+    QPointF getValue(const Layer *layer) const override;
+    void setValue(Layer *layer, const QPointF &value) const override;
 };
 
 /**
@@ -200,7 +159,7 @@ private:
  * Does not affect the contents of the tile layer, as opposed to the
  * ResizeTileLayer command.
  */
-class SetTileLayerSize : public QUndoCommand
+class SetTileLayerSize : public ChangeValue<TileLayer, QSize>
 {
 public:
     SetTileLayerSize(Document *document,
@@ -208,15 +167,9 @@ public:
                      QSize size,
                      QUndoCommand *parent = nullptr);
 
-    void undo() override { swap(); }
-    void redo() override { swap(); }
-
 private:
-    void swap();
-
-    Document *mDocument;
-    TileLayer *mTileLayer;
-    QSize mSize;
+    QSize getValue(const TileLayer *layer) const override;
+    void setValue(TileLayer *layer, const QSize &value) const override;
 };
 
 } // namespace Tiled

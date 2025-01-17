@@ -26,6 +26,7 @@
 
 namespace Tiled {
 
+class EditableAsset;
 class ProjectModel;
 
 /**
@@ -33,17 +34,19 @@ class ProjectModel;
  *
  * No dependencies.
  */
-class ProjectManager : public QObject
+class TILED_EDITOR_EXPORT ProjectManager : public QObject
 {
     Q_OBJECT
 
 public:
     explicit ProjectManager(QObject *parent = nullptr);
+    ~ProjectManager() override;
 
     static ProjectManager *instance();
 
-    void setProject(Project project);
+    void setProject(std::unique_ptr<Project> project);
     Project &project();
+    EditableAsset *editableProject();
 
     ProjectModel *projectModel();
 

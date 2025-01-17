@@ -30,13 +30,11 @@
 
 #include "pluginmanager.h"
 
-#include "qtcompat_p.h"
-
 namespace Tiled {
 
 Plugin::~Plugin()
 {
-    for (QObject *object : qAsConst(mAddedObjects))
+    for (QObject *object : std::as_const(mAddedObjects))
         PluginManager::removeObject(object);
 }
 

@@ -27,7 +27,6 @@
 #include "preferences.h"
 #include "reversingproxymodel.h"
 #include "utils.h"
-#include "reversingrecursivefiltermodel.h"
 
 #include <QAction>
 #include <QGuiApplication>
@@ -35,20 +34,22 @@
 #include <QKeyEvent>
 #include <QMenu>
 #include <QPainter>
+#include <QScopedValueRollback>
 
 namespace Tiled {
 
 namespace preferences {
 static Preference<int> firstColumnWidth { "ObjectsDock/FirstSectionSize", 200 };
-static Preference<QVariantList> visibleColumns { "ObjectsDock/VisibleSections", { MapObjectModel::Name, MapObjectModel::Type } };
+static Preference<QVariantList> visibleColumns { "ObjectsDock/VisibleSections", { MapObjectModel::Name, MapObjectModel::Class } };
 } // namespace preferences
 
 ObjectsView::ObjectsView(QWidget *parent)
     : QTreeView(parent)
-    , mProxyModel(new ReversingRecursiveFilterModel(this))
+    , mProxyModel(new ReversingProxyModel(this))
 {
     setMouseTracking(true);
 
+    mProxyModel->setRecursiveFilteringEnabled(true);
     mProxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
     mProxyModel->setFilterKeyColumn(-1);
 
@@ -79,8 +80,10 @@ void ObjectsView::setMapDocument(MapDocument *mapDoc)
     if (mapDoc == mMapDocument)
         return;
 
-    if (mMapDocument)
+    if (mMapDocument) {
+        saveExpandedLayers();
         mMapDocument->disconnect(this);
+    }
 
     mMapDocument = mapDoc;
 
@@ -100,6 +103,8 @@ void ObjectsView::setMapDocument(MapDocument *mapDoc)
 
         if (mActiveFilter)
             expandAll();
+        else
+            restoreExpandedLayers();
     } else {
         mProxyModel->setSourceModel(nullptr);
     }
@@ -150,7 +155,7 @@ void ObjectsView::saveExpandedLayers()
     if (mActiveFilter)
         return;
 
-    mExpandedLayers[mMapDocument].clear();
+    mMapDocument->expandedObjectLayers.clear();
 
     for (Layer *layer : mMapDocument->map()->allLayers()) {
         if (!layer->isObjectGroup() && !layer->isGroupLayer())
@@ -159,28 +164,23 @@ void ObjectsView::saveExpandedLayers()
         const QModelIndex sourceIndex = mMapDocument->mapObjectModel()->index(layer);
         const QModelIndex index = mProxyModel->mapFromSource(sourceIndex);
         if (isExpanded(index))
-            mExpandedLayers[mMapDocument].append(layer->id());
+            mMapDocument->expandedObjectLayers.insert(layer->id());
     }
 }
 
 void ObjectsView::restoreExpandedLayers()
 {
-    if (mActiveFilter)
-        return;
-
-    const auto layers = mExpandedLayers.take(mMapDocument);
+    const auto &layers = mMapDocument->expandedObjectLayers;
     for (const int layerId : layers) {
         if (Layer *layer = mMapDocument->map()->findLayerById(layerId)) {
+            if (!layer->isObjectGroup() && !layer->isGroupLayer())
+                continue;
+
             const QModelIndex sourceIndex = mMapDocument->mapObjectModel()->index(layer);
             const QModelIndex index = mProxyModel->mapFromSource(sourceIndex);
             setExpanded(index, true);
         }
     }
-}
-
-void ObjectsView::clearExpandedLayers(MapDocument *mapDocument)
-{
-    mExpandedLayers.remove(mapDocument);
 }
 
 bool ObjectsView::event(QEvent *event)
@@ -275,9 +275,8 @@ void ObjectsView::selectionChanged(const QItemSelection &selected,
     }
 
     if (selectedObjects != mMapDocument->selectedObjects()) {
-        mSynching = true;
+        QScopedValueRollback<bool> synching(mSynching, true);
         mMapDocument->setSelectedObjects(selectedObjects);
-        mSynching = false;
     }
 }
 
@@ -374,12 +373,11 @@ void ObjectsView::synchronizeSelectedItems()
         itemSelection.select(index, index);
     }
 
-    mSynching = true;
+    QScopedValueRollback<bool> synching(mSynching, true);
     selectionModel()->select(itemSelection,
                              QItemSelectionModel::Select |
                              QItemSelectionModel::Rows |
                              QItemSelectionModel::Clear);
-    mSynching = false;
 }
 
 void ObjectsView::expandToSelectedObjects()

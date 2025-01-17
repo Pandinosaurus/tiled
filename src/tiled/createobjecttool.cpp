@@ -253,7 +253,7 @@ bool CreateObjectTool::startNewMapObject(const QPointF &pos,
 
     mNewMapObjectGroup->setColor(objectGroup->color());
     mNewMapObjectGroup->setOffset(objectGroup->totalOffset());
-    mNewMapObjectGroup->setParallaxFactor(objectGroup->parallaxFactor());
+    mNewMapObjectGroup->setParallaxFactor(objectGroup->effectiveParallaxFactor());
 
     updateNewObjectGroupItemPos();
 
@@ -342,7 +342,7 @@ void CreateObjectTool::finishNewMapObject()
                                               newMapObject.get());
 
     if (Tileset *tileset = newMapObject.get()->cell().tileset()) {
-        SharedTileset sharedTileset = tileset->sharedPointer();
+        SharedTileset sharedTileset = tileset->sharedFromThis();
 
         // Make sure this tileset is part of the map
         if (!mapDocument()->map()->tilesets().contains(sharedTileset))

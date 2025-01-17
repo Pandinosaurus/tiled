@@ -133,7 +133,6 @@ private:
     void applyWangId();
     void finishWangIdChange();
     Tile *currentTile() const;
-    void setHandScrolling(bool handScrolling);
 
     enum WangBehavior {
         AssignWholeId,      // Assigning templates
@@ -160,9 +159,6 @@ private:
     QModelIndex mHoveredIndex;
     bool mWangIdChanged = false;
 
-    bool mHandScrolling = false;
-    QPoint mLastMousePos;
-
     const QIcon mImageMissingIcon;
 };
 
@@ -177,5 +173,3 @@ inline bool TilesetView::markAnimatedTiles() const
 }
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::TilesetView *)

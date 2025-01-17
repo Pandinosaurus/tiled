@@ -21,9 +21,7 @@
 
 #include "preferences.h"
 
-#include "documentmanager.h"
 #include "languagemanager.h"
-#include "mapdocument.h"
 #include "pluginmanager.h"
 #include "savefile.h"
 #include "session.h"
@@ -39,6 +37,7 @@ using namespace Tiled;
 
 Preferences *Preferences::mInstance;
 QString Preferences::mStartupProject;
+QString Preferences::mStartupSession;
 
 Preferences *Preferences::instance()
 {
@@ -86,9 +85,6 @@ void Preferences::initialize()
     if (!dataDir.exists())
         dataDir.mkpath(QStringLiteral("."));
 
-    connect(&mWatcher, &FileSystemWatcher::fileChanged,
-            this, &Preferences::objectTypesFileChangedOnDisk);
-
     SaveFile::setSafeSavingEnabled(safeSavingEnabled());
 
     // Backwards compatibility check since 'FusionStyle' was removed from the
@@ -130,6 +126,13 @@ void Preferences::initialize()
         setValue(QLatin1String("Install/DonationDialogTime"), donationDialogTime.toString(Qt::ISODate));
     }
     setValue(QLatin1String("Install/RunCount"), runCount() + 1);
+
+    const auto oldGridMajorKey = QStringLiteral("Interface/GridMajor");
+    if (contains(oldGridMajorKey)) {
+        const int gridMajor = value(oldGridMajorKey).toInt();
+        setGridMajor(QSize(gridMajor, gridMajor));
+        remove(oldGridMajorKey);
+    }
 }
 
 bool Preferences::showGrid() const
@@ -192,9 +195,9 @@ int Preferences::gridFine() const
     return get<int>("Interface/GridFine", 4);
 }
 
-int Preferences::gridMajor() const
+QSize Preferences::gridMajor() const
 {
-    return get<int>("Interface/GridMajor", 10);
+    return get<QSize>("Interface/GridMajorSize", QSize(10, 10));
 }
 
 qreal Preferences::objectLineWidth() const
@@ -276,6 +279,29 @@ void Preferences::setSelectionColor(const QColor &color)
     emit selectionColorChanged(color);
 }
 
+bool Preferences::useCustomFont() const
+{
+    return get<bool>("Interface/UseCustomFont", false);
+}
+
+void Preferences::setUseCustomFont(bool useCustomFont)
+{
+    setValue(QLatin1String("Interface/UseCustomFont"), useCustomFont);
+    emit applicationFontChanged();
+}
+
+QFont Preferences::customFont() const
+{
+    return get<QFont>("Interface/CustomFont", QGuiApplication::font());
+}
+
+void Preferences::setCustomFont(const QFont &font)
+{
+    setValue(QLatin1String("Interface/CustomFont"), font);
+    if (useCustomFont())
+        emit applicationFontChanged();
+}
+
 Map::LayerDataFormat Preferences::layerDataFormat() const
 {
     return static_cast<Map::LayerDataFormat>(get<int>("Storage/LayerDataFormat", Map::CSV));
@@ -354,10 +380,20 @@ void Preferences::setGridFine(int gridFine)
     emit gridFineChanged(gridFine);
 }
 
-void Preferences::setGridMajor(int gridMajor)
+void Preferences::setGridMajor(QSize gridMajor)
 {
-    setValue(QLatin1String("Interface/GridMajor"), gridMajor);
+    setValue(QLatin1String("Interface/GridMajorSize"), gridMajor);
     emit gridMajorChanged(gridMajor);
+}
+
+void Preferences::setGridMajorX(int gridMajorX)
+{
+    setGridMajor(QSize(gridMajorX, gridMajor().height()));
+}
+
+void Preferences::setGridMajorY(int gridMajorY)
+{
+    setGridMajor(QSize(gridMajor().width(), gridMajorY));
 }
 
 void Preferences::setObjectLineWidth(qreal lineWidth)
@@ -503,12 +539,6 @@ void Preferences::setUseOpenGL(bool useOpenGL)
     emit useOpenGLChanged(useOpenGL);
 }
 
-void Preferences::setObjectTypes(const ObjectTypes &objectTypes)
-{
-    Object::setObjectTypes(objectTypes);
-    emit objectTypesChanged();
-}
-
 void Preferences::setPropertyTypes(const SharedPropertyTypes &propertyTypes)
 {
     Object::setPropertyTypes(propertyTypes);
@@ -600,13 +630,18 @@ void Preferences::addRecentProject(const QString &fileName)
 
 QString Preferences::startupSession() const
 {
+    if (!mStartupSession.isEmpty())
+        return mStartupSession;
     if (!startupProject().isEmpty())
         return Session::defaultFileNameForProject(startupProject());
     if (!restoreSessionOnStartup())
         return Session::defaultFileName();
 
     const auto session = get<QString>("Project/LastSession");
-    return session.isEmpty() ? Session::defaultFileName() : session;
+    if (session.isEmpty() || !QFileInfo::exists(session))
+        return Session::defaultFileName();
+
+    return session;
 }
 
 void Preferences::setLastSession(const QString &fileName)
@@ -757,9 +792,12 @@ void Preferences::setStartupProject(const QString &filePath)
     mStartupProject = filePath;
 }
 
-QString Preferences::objectTypesFile() const
+/**
+ * Sets the session to load on startup.
+ */
+void Preferences::setStartupSession(const QString &filePath)
 {
-    return mObjectTypesFile;
+    mStartupSession = filePath;
 }
 
 void Preferences::setObjectTypesFile(const QString &fileName)
@@ -768,34 +806,8 @@ void Preferences::setObjectTypesFile(const QString &fileName)
     if (newObjectTypesFile.isEmpty())
         newObjectTypesFile = dataLocation() + QLatin1String("/objecttypes.xml");
 
-    if (mObjectTypesFile == newObjectTypesFile)
-        return;
-
-    if (!mObjectTypesFile.isEmpty())
-        mWatcher.removePath(mObjectTypesFile);
-
-    mObjectTypesFile = newObjectTypesFile;
-    mWatcher.addPath(newObjectTypesFile);
-
-    ObjectTypes objectTypes;
-    ObjectTypesSerializer().readObjectTypes(mObjectTypesFile, objectTypes);
-    setObjectTypes(objectTypes);
-}
-
-void Preferences::setObjectTypesFileLastSaved(const QDateTime &time)
-{
-    mObjectTypesFileLastSaved = time;
-}
-
-void Preferences::objectTypesFileChangedOnDisk()
-{
-    const QFileInfo fileInfo { objectTypesFile() };
-    if (fileInfo.lastModified() == mObjectTypesFileLastSaved)
-        return;
-
-    ObjectTypes objectTypes;
-    if (ObjectTypesSerializer().readObjectTypes(fileInfo.filePath(), objectTypes))
-        setObjectTypes(objectTypes);
+    if (mObjectTypesFile != newObjectTypesFile)
+        mObjectTypesFile = newObjectTypesFile;
 }
 
 #include "moc_preferences.cpp"

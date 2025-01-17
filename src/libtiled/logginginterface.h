@@ -59,7 +59,7 @@ public:
     Issue();
     Issue(Severity severity,
           const QString &text,
-          const std::function<void()> &callback = std::function<void()>(),
+          std::function<void ()> callback = std::function<void()>(),
           const void *context = nullptr);
 
     Severity severity() const { return mSeverity; }
@@ -139,12 +139,12 @@ inline void INFO(const QString &message)
 
 inline void WARNING(const QString &message, std::function<void()> callback = std::function<void()>(), const void *context = nullptr)
 {
-    REPORT(Issue { Issue::Warning, message, callback, context });
+    REPORT(Issue { Issue::Warning, message, std::move(callback), context });
 }
 
 inline void ERROR(const QString &message, std::function<void()> callback = std::function<void()>(), const void *context = nullptr)
 {
-    REPORT(Issue { Issue::Error, message, callback, context });
+    REPORT(Issue { Issue::Error, message, std::move(callback), context });
 }
 
 inline void INFO(QLatin1String message)
@@ -154,58 +154,57 @@ inline void INFO(QLatin1String message)
 
 inline void WARNING(QLatin1String message, std::function<void()> callback = std::function<void()>(), const void *context = nullptr)
 {
-    WARNING(QString(message), callback, context);
+    WARNING(QString(message), std::move(callback), context);
 }
 
 inline void ERROR(QLatin1String message, std::function<void()> callback = std::function<void()>(), const void *context = nullptr)
 {
-    ERROR(QString(message), callback, context);
+    ERROR(QString(message), std::move(callback), context);
 }
 
-// TODO: Try "static inline" once we switch to C++17
-#define ACTIVATABLE(Class) \
-    void operator() () const { activated(*this); } \
-    static std::function<void (const Class &)> activated;
-
-struct TILEDSHARED_EXPORT OpenFile
+template<typename Class>
+struct Activatable
 {
-    QString file;
+    void operator() () const {
+        activated(*static_cast<const Class*>(this));
+    }
 
-    ACTIVATABLE(OpenFile)
+    static inline std::function<void (const Class &)> activated;
 };
 
-struct TILEDSHARED_EXPORT JumpToTile
+struct TILEDSHARED_EXPORT OpenFile : Activatable<OpenFile>
+{
+    OpenFile(const QString &file);
+
+    QString file;
+};
+
+struct TILEDSHARED_EXPORT JumpToTile : Activatable<JumpToTile>
 {
     JumpToTile(const Map *map, QPoint tilePos, const Layer *layer = nullptr);
 
     QString mapFile;
     QPoint tilePos;
     int layerId = -1;
-
-    ACTIVATABLE(JumpToTile)
 };
 
-struct TILEDSHARED_EXPORT JumpToObject
+struct TILEDSHARED_EXPORT JumpToObject : Activatable<JumpToObject>
 {
     JumpToObject(const MapObject *object);
 
     QString mapFile;
     int objectId;
-
-    ACTIVATABLE(JumpToObject)
 };
 
-struct TILEDSHARED_EXPORT SelectLayer
+struct TILEDSHARED_EXPORT SelectLayer : Activatable<SelectLayer>
 {
     SelectLayer(const Layer *layer);
 
     QString mapFile;
     int layerId;
-
-    ACTIVATABLE(SelectLayer)
 };
 
-struct TILEDSHARED_EXPORT SelectCustomProperty
+struct TILEDSHARED_EXPORT SelectCustomProperty : Activatable<SelectCustomProperty>
 {
     SelectCustomProperty(QString fileName, QString propertyName, const Object *object);
 
@@ -213,19 +212,15 @@ struct TILEDSHARED_EXPORT SelectCustomProperty
     QString propertyName;
     int objectType;         // see Object::TypeId
     int id = -1;
-
-    ACTIVATABLE(SelectCustomProperty)
 };
 
-struct TILEDSHARED_EXPORT SelectTile
+struct TILEDSHARED_EXPORT SelectTile : Activatable<SelectTile>
 {
     SelectTile(const Tile *tile);
 
     QWeakPointer<Tileset> tileset;
     QString tilesetFile;
     int tileId;
-
-    ACTIVATABLE(SelectTile)
 };
 
 #undef ACTIVATABLE

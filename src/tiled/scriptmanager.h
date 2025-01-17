@@ -21,10 +21,12 @@
 #pragma once
 
 #include "filesystemwatcher.h"
+#include "tilededitor_global.h"
 
 #include <QJSValue>
 #include <QObject>
 #include <QQmlError>
+#include <QScopedValueRollback>
 #include <QStringList>
 
 class QJSEngine;
@@ -38,17 +40,30 @@ class ScriptModule;
  *
  * Dependencies: ProjectManager, DocumentManager (optional)
  */
-class ScriptManager : public QObject
+class TILED_EDITOR_EXPORT ScriptManager : public QObject
 {
     Q_OBJECT
 
     Q_PROPERTY(bool projectExtensionsSuppressed READ projectExtensionsSuppressed NOTIFY projectExtensionsSuppressedChanged)
 
 public:
+    /**
+     * While a reset blocker instance exists, resetting of the script engine
+     * is suppressed. This avoids a crash when a reset happens while script
+     * execution is paused by a popup.
+     */
+    struct ResetBlocker : QScopedValueRollback<bool> {
+        ResetBlocker()
+            : QScopedValueRollback<bool>(ScriptManager::instance().mResetBlocked, true)
+        {}
+    };
+
     static ScriptManager &instance();
     static void deleteInstance();
 
     void ensureInitialized();
+
+    void setScriptArguments(const QStringList &arguments);
 
     const QString &extensionsPath() const;
 
@@ -58,7 +73,7 @@ public:
     QJSValue evaluate(const QString &program,
                       const QString &fileName = QString(), int lineNumber = 1);
 
-    QJSValue evaluateFile(const QString &fileName);
+    void evaluateFileOrLoadModule(const QString &fileName);
 
     /**
      * Create a new global identifier ($0, $1, $2, ...) for the value. Returns
@@ -92,6 +107,8 @@ private:
     void loadExtensions();
     void loadExtension(const QString &path);
 
+    QJSValue evaluateFile(const QString &fileName);
+
     QJSEngine *mEngine = nullptr;
     ScriptModule *mModule = nullptr;
     FileSystemWatcher mWatcher;
@@ -99,6 +116,10 @@ private:
     QStringList mExtensionsPaths;
     int mTempCount = 0;
     bool mProjectExtensionsSuppressed = false;
+
+    friend struct ResetBlocker;
+    bool mResetBlocked = false;
+    QTimer mResetTimer;
 
     static ScriptManager *mInstance;
 };

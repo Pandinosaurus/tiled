@@ -28,6 +28,7 @@
 #include "mapscene.h"
 #include "mapview.h"
 #include "objectgroup.h"
+#include "objectreferenceshelper.h"
 #include "snaphelper.h"
 #include "tile.h"
 #include "tilelayer.h"
@@ -35,15 +36,14 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QHash>
 #include <QJsonDocument>
 #include <QMimeData>
 #include <QSet>
 #include <QUndoStack>
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
 #include <QCborArray>
 #include <QCborValue>
-#endif
 
 #include <algorithm>
 
@@ -108,11 +108,7 @@ Properties ClipboardManager::properties() const
     const QMimeData *mimeData = mClipboard->mimeData();
     const QByteArray data = mimeData->data(QLatin1String(PROPERTIES_MIMETYPE));
 
-#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
-    const QJsonArray array = QJsonDocument::fromBinaryData(data).array();
-#else
     const QJsonArray array = QCborValue::fromCbor(data).toArray().toJsonArray();
-#endif
 
     return propertiesFromJson(array);
 }
@@ -125,12 +121,7 @@ void ClipboardManager::setProperties(const Properties &properties)
     const QJsonDocument document(propertiesJson);
 
     mimeData->setText(QString::fromUtf8(document.toJson()));
-
-#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
-    mimeData->setData(QLatin1String(PROPERTIES_MIMETYPE), document.toBinaryData());
-#else
     mimeData->setData(QLatin1String(PROPERTIES_MIMETYPE), QCborArray::fromJsonArray(propertiesJson).toCborValue().toCbor());
-#endif
 
     mClipboard->setMimeData(mimeData);
 }
@@ -158,11 +149,13 @@ bool ClipboardManager::copySelection(const MapDocument &mapDocument)
     mapParameters.infinite = false;
     Map copyMap(mapParameters);
 
-    bool tileLayerSelected = std::any_of(selectedLayers.begin(), selectedLayers.end(),
-                                         [] (Layer *layer) { return layer->isTileLayer(); });
+    if (!selectedArea.isEmpty()) {
+        bool tileLayerSelected = std::any_of(selectedLayers.begin(), selectedLayers.end(),
+                                             [] (Layer *layer) { return layer->isTileLayer(); });
 
-    if (tileLayerSelected)
-        map->copyLayers(selectedLayers, selectedArea, copyMap);
+        if (tileLayerSelected)
+            map->copyLayers(selectedLayers, selectedArea, copyMap);
+    }
 
     if (!selectedObjects.isEmpty()) {
         bool objectGroupSelected = std::any_of(selectedLayers.begin(), selectedLayers.end(),
@@ -231,15 +224,22 @@ void ClipboardManager::pasteObjectGroup(const ObjectGroup *objectGroup,
     QVector<AddMapObjects::Entry> objectsToAdd;
     objectsToAdd.reserve(objectGroup->objectCount());
 
+    Map *map = mapDocument->map();
+    ObjectReferencesHelper objectRefs(map);
+
     for (const MapObject *mapObject : objectGroup->objects()) {
         if (flags & PasteNoTileObjects && !mapObject->cell().isEmpty())
             continue;
 
         MapObject *objectClone = mapObject->clone();
-        objectClone->resetId();
         objectClone->setPosition(objectClone->position() + insertPos);
+
+        objectRefs.reassignId(objectClone);
+
         objectsToAdd.append(AddMapObjects::Entry { objectClone, currentObjectGroup });
     }
+
+    objectRefs.rewire();
 
     auto command = new AddMapObjects(mapDocument, objectsToAdd);
     command->setText(tr("Paste Objects"));

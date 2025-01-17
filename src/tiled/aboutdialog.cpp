@@ -22,6 +22,7 @@
 #include "aboutdialog.h"
 
 #include "newversionchecker.h"
+#include "tiledapplication.h"
 #include "tiledproxystyle.h"
 #include "utils.h"
 
@@ -37,9 +38,6 @@ AboutDialog::AboutDialog(QWidget *parent): QDialog(parent)
 {
     setupUi(this);
     logo->setMinimumWidth(Utils::dpiScaled(logo->minimumWidth()));
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-#endif
 
     connect(textBrowser->document()->documentLayout(), &QAbstractTextDocumentLayout::documentSizeChanged,
             this, [this](const QSizeF &size) {
@@ -49,11 +47,11 @@ AboutDialog::AboutDialog(QWidget *parent): QDialog(parent)
     const QString html = QCoreApplication::translate(
             "AboutDialog",
             "<p align=\"center\"><font size=\"+2\"><b>Tiled Map Editor</b></font><br><i>Version %1</i></p>\n"
-            "<p align=\"center\">Copyright 2008-2021 Thorbj&oslash;rn Lindeijer<br>(see the AUTHORS file for a full list of contributors)</p>\n"
+            "<p align=\"center\">Copyright 2008-%2 Thorbj&oslash;rn Lindeijer<br>(see the AUTHORS file for a full list of contributors)</p>\n"
             "<p align=\"center\">You may modify and redistribute this program under the terms of the GPL (version 2 or later). "
             "A copy of the GPL is contained in the 'COPYING' file distributed with Tiled.</p>\n"
             "<p align=\"center\"><a href=\"https://www.mapeditor.org/\">https://www.mapeditor.org/</a></p>\n")
-            .arg(QApplication::applicationVersion());
+            .arg(QApplication::applicationVersion(), QStringLiteral("2025"));
 
     textBrowser->setHtml(html);
 
@@ -65,7 +63,7 @@ AboutDialog::AboutDialog(QWidget *parent): QDialog(parent)
 
     // Manual refresh to update the NewVersionButton in this dialog, in case
     // automatic checking was disabled.
-    NewVersionChecker::instance().refresh();
+    tiledApp()->newVersionChecker().refresh();
 }
 
 void AboutDialog::donate()

@@ -23,6 +23,7 @@
 
 #include "changeevents.h"
 #include "id.h"
+#include "layer.h"
 
 #include <QCursor>
 #include <QGraphicsSceneMouseEvent>
@@ -69,6 +70,8 @@ class AbstractTool : public QObject
     Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledChanged)
     Q_PROPERTY(bool visible READ isVisible WRITE setVisible NOTIFY visibleChanged)
     Q_PROPERTY(bool usesSelectedTiles READ usesSelectedTiles WRITE setUsesSelectedTiles)
+    Q_PROPERTY(bool usesWangSets READ usesWangSets WRITE setUsesWangSets)
+    Q_PROPERTY(int targetLayerType READ targetLayerType WRITE setTargetLayerType)
 
 public:
     /**
@@ -106,6 +109,12 @@ public:
 
     bool usesSelectedTiles() const;
     void setUsesSelectedTiles(bool usesSelectedTiles);
+
+    bool usesWangSets() const;
+    void setUsesWangSets(bool usesWangSets);
+
+    int targetLayerType() const;
+    void setTargetLayerType(int targetLayerType);
 
     ToolManager *toolManager() const;
     Tile *tile() const;
@@ -162,8 +171,7 @@ public:
 
     /**
      * Called when the user presses or releases a modifier key resulting
-     * in a change of modifier status, and when the tool is enabled with
-     * a modifier key pressed.
+     * in a change of modifier status, and after the tool is activated.
      */
     virtual void modifiersChanged(Qt::KeyboardModifiers) {}
 
@@ -227,6 +235,8 @@ private:
     bool mEnabled = false;
     bool mVisible = true;
     bool mUsesSelectedTiles = false;
+    bool mUsesWangSets = false;
+    int mTargetLayerType = 0;
 
     ToolManager *mToolManager = nullptr;
     MapDocument *mMapDocument = nullptr;
@@ -290,6 +300,21 @@ inline void AbstractTool::setUsesSelectedTiles(bool usesSelectedTiles)
     mUsesSelectedTiles = usesSelectedTiles;
 }
 
+inline bool AbstractTool::usesWangSets() const
+{
+    return mUsesWangSets;
+}
+
+inline void AbstractTool::setUsesWangSets(bool usesWangSets)
+{
+    mUsesWangSets = usesWangSets;
+}
+
+inline int AbstractTool::targetLayerType() const
+{
+    return mTargetLayerType;
+}
+
 /**
  * Returns the ToolManager with which this tool is registered, if any.
  */
@@ -299,6 +324,3 @@ inline ToolManager *AbstractTool::toolManager() const
 }
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::AbstractTool*)
-Q_DECLARE_INTERFACE(Tiled::AbstractTool, "org.mapeditor.AbstractTool")

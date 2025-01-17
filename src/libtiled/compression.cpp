@@ -40,8 +40,6 @@
 #include <QByteArray>
 #include <QDebug>
 
-#include "qtcompat_p.h"
-
 #ifdef Z_PREFIX
 #undef compress
 #endif
@@ -65,6 +63,20 @@ static void logZlibError(int error)
             break;
         default:
             qDebug() << "Unknown error while (de)compressing data!";
+    }
+}
+
+bool Tiled::compressionSupported(CompressionMethod method)
+{
+    switch (method) {
+    case Gzip:
+    case Zlib:
+#ifdef TILED_ZSTD_SUPPORT
+    case Zstandard:
+#endif
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -102,7 +114,7 @@ QByteArray Tiled::decompress(const QByteArray &data,
             switch (ret) {
                 case Z_NEED_DICT:
                     ret = Z_DATA_ERROR;
-                    Q_FALLTHROUGH();
+                    [[fallthrough]];
                 case Z_DATA_ERROR:
                 case Z_MEM_ERROR:
                     inflateEnd(&strm);

@@ -28,6 +28,10 @@
 
 #include "tmxviewer.h"
 
+#include "pluginmanager.h"
+#include "tiled.h"
+#include "tmxmapformat.h"
+
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDebug>
@@ -47,14 +51,22 @@ int main(int argc, char *argv[])
     }
 #endif
 
+    Tiled::increaseImageAllocationLimit();
+
     QApplication a(argc, argv);
 
     a.setOrganizationDomain(QStringLiteral("mapeditor.org"));
     a.setApplicationName(QStringLiteral("TmxViewer"));
     a.setApplicationVersion(QStringLiteral("1.0"));
 
+    Tiled::PluginManager::instance()->loadPlugins();
+
+    // Necessary to enable loading of object templates in XML format
+    Tiled::XmlObjectTemplateFormat xmlObjectTemplateFormat;
+    Tiled::PluginManager::addObject(&xmlObjectTemplateFormat);
+
     QCommandLineParser parser;
-    parser.setApplicationDescription(QCoreApplication::translate("main", "Displays a Tiled map (TMX format)."));
+    parser.setApplicationDescription(QCoreApplication::translate("main", "Displays a Tiled map."));
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addPositionalArgument(QStringLiteral("file"), QCoreApplication::translate("main", "Map file to display."));

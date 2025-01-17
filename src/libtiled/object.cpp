@@ -31,118 +31,99 @@
 #include "mapobject.h"
 #include "tile.h"
 
-#include "qtcompat_p.h"
-
 namespace Tiled {
 
-ObjectTypes Object::mObjectTypes;
 SharedPropertyTypes Object::mPropertyTypes;
+
 Object::~Object()
-{}
+{
+    delete mEditable;
+}
+
+const ClassPropertyType *Object::classType() const
+{
+    QString objectClassName = className();
+    if (objectClassName.isEmpty() && typeId() == Object::MapObjectType) {
+        auto mapObject = static_cast<const MapObject*>(this);
+        objectClassName = mapObject->effectiveClassName();
+    }
+
+    return propertyTypes().findClassFor(objectClassName, *this);
+}
 
 /**
  * Returns the value of the property \a name, taking into account that it may
- * be inherited from another object or from the type.
+ * be inherited from another object or from the class.
  *
- * - A Tile instance can inherit properties based on its type
- * - A MapObject instance can inherit properties based on:
+ * - Any object can inherit properties based on its class
+ * - A MapObject instance can in addition inherit properties based on:
  *      - Its template object
- *      - Its tile
- *      - Its type (or the type of its tile)
+ *      - Its tile or the class of its tile
  */
 QVariant Object::resolvedProperty(const QString &name) const
 {
     if (hasProperty(name))
         return property(name);
 
-    QString objectType;
+    QString objectClassName = className();
 
-    switch (typeId()) {
-    case MapObjectType: {
+    if (typeId() == MapObjectType) {
         auto mapObject = static_cast<const MapObject*>(this);
-        objectType = mapObject->type();
+        objectClassName = mapObject->effectiveClassName();
 
         if (const MapObject *templateObject = mapObject->templateObject())
             if (templateObject->hasProperty(name))
                 return templateObject->property(name);
 
-        if (Tile *tile = mapObject->cell().tile()) {
+        if (Tile *tile = mapObject->cell().tile())
             if (tile->hasProperty(name))
                 return tile->property(name);
-
-            if (objectType.isEmpty())
-                objectType = tile->type();
-        }
-
-        break;
-    }
-    case TileType:
-        objectType = static_cast<const Tile*>(this)->type();
-        break;
-    default:
-        return QVariant();
     }
 
-    if (!objectType.isEmpty()) {
-        for (const ObjectType &type : qAsConst(mObjectTypes)) {
-            if (type.name == objectType)
-                if (type.defaultProperties.contains(name))
-                    return type.defaultProperties.value(name);
-        }
-    }
+    if (auto type = propertyTypes().findClassFor(objectClassName, *this))
+        return type->members.value(name);
 
     return QVariant();
 }
 
 QVariantMap Object::resolvedProperties() const
 {
-    QVariantMap allProperties;
+    QVariantMap allProperties(inheritedProperties());
+    Tiled::mergeProperties(allProperties, properties());
+    return allProperties;
+}
+
+/**
+ * Computes the inherited properties for this object. This excludes the
+ * properties that are directly set on the object.
+ */
+QVariantMap Object::inheritedProperties() const
+{
+    QVariantMap inheritedProperties;
+
     // Insert properties into allProperties in the reverse order that
     // Object::resolvedProperty searches them, to make sure that the
     // same precedence is maintained.
 
-    QString objectType;
-    switch (typeId()) {
-    case Object::MapObjectType: {
-        auto mapObject = static_cast<const MapObject*>(this);
-        objectType = mapObject->type();
-        if (objectType.isEmpty())
-            if (const Tile *tile = mapObject->cell().tile())
-                objectType = tile->type();
-        break;
-    }
-    case Object::TileType:
-        objectType = static_cast<const Tile*>(this)->type();
-        break;
-    default:
-        break;
-    }
+    if (auto type = classType())
+        Tiled::mergeProperties(inheritedProperties, type->members);
 
-    if (!objectType.isEmpty()) {
-        for (const ObjectType &type : qAsConst(mObjectTypes)) {
-            if (type.name == objectType)
-                Tiled::mergeProperties(allProperties, type.defaultProperties);
-        }
-    }
-    
     if (typeId() == Object::MapObjectType) {
         auto mapObject = static_cast<const MapObject*>(this);
 
         if (const Tile *tile = mapObject->cell().tile())
-            Tiled::mergeProperties(allProperties, tile->properties());
-        
+            Tiled::mergeProperties(inheritedProperties, tile->properties());
+
         if (const MapObject *templateObject = mapObject->templateObject())
-            Tiled::mergeProperties(allProperties, templateObject->properties());
+            Tiled::mergeProperties(inheritedProperties, templateObject->properties());
     }
 
-    Tiled::mergeProperties(allProperties, properties());
-    
-    return allProperties;
+    return inheritedProperties;
 }
 
-void Object::setObjectTypes(const ObjectTypes &objectTypes)
+bool Object::setProperty(const QStringList &path, const QVariant &value)
 {
-    mObjectTypes = objectTypes;
+    return setPropertyMemberValue(mProperties, path, value);
 }
 
 void Object::setPropertyTypes(const SharedPropertyTypes &propertyTypes)

@@ -20,7 +20,6 @@
 
 #include "scriptmanager.h"
 
-#include "documentmanager.h"
 #include "editablegrouplayer.h"
 #include "editableimagelayer.h"
 #include "editablemap.h"
@@ -31,6 +30,7 @@
 #include "editabletilelayer.h"
 #include "editabletileset.h"
 #include "editablewangset.h"
+#include "editableworld.h"
 #include "logginginterface.h"
 #include "mapeditor.h"
 #include "mapview.h"
@@ -38,30 +38,36 @@
 #include "project.h"
 #include "projectmanager.h"
 #include "regionvaluetype.h"
+#include "scriptbase64.h"
+#include "scriptdialog.h"
 #include "scriptedaction.h"
-#include "scriptedfileformat.h"
 #include "scriptedtool.h"
 #include "scriptfile.h"
 #include "scriptfileformatwrappers.h"
 #include "scriptfileinfo.h"
+#include "scriptgeometry.h"
 #include "scriptimage.h"
 #include "scriptmodule.h"
 #include "scriptprocess.h"
 #include "tilecollisiondock.h"
 #include "tilelayer.h"
 #include "tilelayeredit.h"
+#include "tilelayerwangedit.h"
 #include "tilesetdock.h"
 #include "tileseteditor.h"
 
+#include <QCoreApplication>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QQmlEngine>
 #include <QStandardPaths>
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
 #include <QTextCodec>
+#else
+#include <QStringDecoder>
 #endif
 #include <QtDebug>
-#include <QCoreApplication>
 
 namespace Tiled {
 
@@ -94,6 +100,11 @@ void ScriptManager::deleteInstance()
 ScriptManager::ScriptManager(QObject *parent)
     : QObject(parent)
 {
+    mResetTimer.setInterval(500);
+    mResetTimer.setSingleShot(true);
+    connect(&mResetTimer, &QTimer::timeout, this, &ScriptManager::reset);
+
+    qRegisterMetaType<AssetType::Value>("AssetType");
     qRegisterMetaType<Cell>();
     qRegisterMetaType<EditableAsset*>();
     qRegisterMetaType<EditableGroupLayer*>();
@@ -106,19 +117,23 @@ ScriptManager::ScriptManager(QObject *parent)
     qRegisterMetaType<EditableTileLayer*>();
     qRegisterMetaType<EditableTileset*>();
     qRegisterMetaType<EditableWangSet*>();
+    qRegisterMetaType<EditableWorld*>();
     qRegisterMetaType<Font>();
     qRegisterMetaType<MapEditor*>();
     qRegisterMetaType<MapView*>();
     qRegisterMetaType<RegionValueType>();
+    qRegisterMetaType<QVector<Tiled::RegionValueType>>();
     qRegisterMetaType<ScriptedAction*>();
     qRegisterMetaType<ScriptedTool*>();
     qRegisterMetaType<TileCollisionDock*>();
     qRegisterMetaType<TileLayerEdit*>();
+    qRegisterMetaType<TileLayerWangEdit*>();
     qRegisterMetaType<TilesetDock*>();
     qRegisterMetaType<TilesetEditor*>();
     qRegisterMetaType<ScriptMapFormatWrapper*>();
     qRegisterMetaType<ScriptTilesetFormatWrapper*>();
     qRegisterMetaType<ScriptImage*>();
+    qRegisterMetaType<WangIndex::Value>("WangIndex");
 
     connect(&mWatcher, &FileSystemWatcher::pathsChanged,
             this, &ScriptManager::scriptFilesChanged);
@@ -145,6 +160,12 @@ void ScriptManager::ensureInitialized()
     }
 }
 
+void ScriptManager::setScriptArguments(const QStringList &arguments)
+{
+    Q_ASSERT(mModule);
+    mModule->setScriptArguments(arguments);
+}
+
 QJSValue ScriptManager::evaluate(const QString &program,
                                  const QString &fileName, int lineNumber)
 {
@@ -157,6 +178,36 @@ QJSValue ScriptManager::evaluate(const QString &program,
 
     globalObject.deleteProperty(QStringLiteral("__filename"));
     return result;
+}
+
+void ScriptManager::evaluateFileOrLoadModule(const QString &fileName)
+{
+    if (fileName.endsWith(QLatin1String(".js"), Qt::CaseInsensitive)) {
+        evaluateFile(fileName);
+    } else {
+        Tiled::INFO(tr("Importing module '%1'").arg(fileName));
+
+        QJSValue globalObject = mEngine->globalObject();
+        globalObject.setProperty(QStringLiteral("__filename"), fileName);
+
+        QJSValue result = mEngine->importModule(fileName);
+
+        // According to the documentation, importModule could return an
+        // error object, though in practice this doesn't appear to happen.
+        if (!checkError(result)) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+            // This appears to be the way to report exceptions
+            checkError(mEngine->catchError());
+#else
+            // With Qt 5 it seems we need to get a little creative, like
+            // calling evaluate to let that catch a potentially raised
+            // exception.
+            checkError(mEngine->evaluate(QString()));
+#endif
+        }
+
+        globalObject.deleteProperty(QStringLiteral("__filename"));
+    }
 }
 
 #if QT_VERSION < QT_VERSION_CHECK(6,0,0)
@@ -208,7 +259,7 @@ void ScriptManager::loadExtensions()
 {
     QStringList extensionSearchPaths;
 
-    for (const QString &extensionsPath : qAsConst(mExtensionsPaths)) {
+    for (const QString &extensionsPath : std::as_const(mExtensionsPaths)) {
         // Extension scripts and resources can also be in the top-level
         extensionSearchPaths.append(extensionsPath);
 
@@ -221,7 +272,7 @@ void ScriptManager::loadExtensions()
 
     QDir::setSearchPaths(QStringLiteral("ext"), extensionSearchPaths);
 
-    for (const QString &extensionPath : extensionSearchPaths)
+    for (const QString &extensionPath : std::as_const(extensionSearchPaths))
         loadExtension(extensionPath);
 }
 
@@ -229,13 +280,17 @@ void ScriptManager::loadExtension(const QString &path)
 {
     mWatcher.addPath(path);
 
+    const QStringList nameFilters = {
+        QLatin1String("*.js"),
+        QLatin1String("*.mjs")
+    };
     const QDir dir(path);
-    const QStringList jsFiles = dir.entryList({ QLatin1String("*.js") },
+    const QStringList jsFiles = dir.entryList(nameFilters,
                                               QDir::Files | QDir::Readable);
 
     for (const QString &jsFile : jsFiles) {
         const QString absolutePath = dir.filePath(jsFile);
-        evaluateFile(absolutePath);
+        evaluateFileOrLoadModule(absolutePath);
         mWatcher.addPath(absolutePath);
     }
 }
@@ -279,11 +334,7 @@ bool ScriptManager::checkError(QJSValue value, const QString &program)
 
 void ScriptManager::throwError(const QString &message)
 {
-#if QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
-    module()->error(message);
-#else
     engine()->throwError(message);
-#endif
 }
 
 void ScriptManager::throwNullArgError(int argNumber)
@@ -294,6 +345,13 @@ void ScriptManager::throwNullArgError(int argNumber)
 
 void ScriptManager::reset()
 {
+    // If resetting the script engine is currently blocked, which can happen
+    // while a script is waiting for a popup, try again later.
+    if (mResetBlocked) {
+        mResetTimer.start();
+        return;
+    }
+
     Tiled::INFO(tr("Resetting script engine"));
 
     mWatcher.clear();
@@ -320,8 +378,23 @@ void ScriptManager::initialize()
     mModule = new ScriptModule(this);
 
     QJSValue globalObject = engine->globalObject();
+
+    // Work around issue where since Qt 6, the value from the global Qt
+    // namespace are no longer part of the Qt object.
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0) && QT_VERSION < QT_VERSION_CHECK(6,4,0)
+    QJSValue qtObject = globalObject.property(QStringLiteral("Qt"));
+
+    auto &qtNamespace = Qt::staticMetaObject;
+    for (int i = qtNamespace.enumeratorCount(); i >= 0; --i) {
+        auto metaEnum = qtNamespace.enumerator(i);
+        for (int k = metaEnum.keyCount(); k >= 0; --k)
+            qtObject.setProperty(QString::fromLatin1(metaEnum.key(k)), metaEnum.value(k));
+    }
+#endif
+
     globalObject.setProperty(QStringLiteral("tiled"), engine->newQObject(mModule));
-#if QT_VERSION >= 0x050800
+    globalObject.setProperty(QStringLiteral("Tiled"), engine->newQMetaObject<ScriptModule>());
+    globalObject.setProperty(QStringLiteral("AssetType"), engine->newQMetaObject(&AssetType::staticMetaObject));
     globalObject.setProperty(QStringLiteral("GroupLayer"), engine->newQMetaObject<EditableGroupLayer>());
     globalObject.setProperty(QStringLiteral("Image"), engine->newQMetaObject<ScriptImage>());
     globalObject.setProperty(QStringLiteral("ImageLayer"), engine->newQMetaObject<EditableImageLayer>());
@@ -332,20 +405,26 @@ void ScriptManager::initialize()
     globalObject.setProperty(QStringLiteral("TileLayer"), engine->newQMetaObject<EditableTileLayer>());
     globalObject.setProperty(QStringLiteral("TileMap"), engine->newQMetaObject<EditableMap>());
     globalObject.setProperty(QStringLiteral("Tileset"), engine->newQMetaObject<EditableTileset>());
+    globalObject.setProperty(QStringLiteral("WangIndex"), engine->newQMetaObject(&WangIndex::staticMetaObject));
     globalObject.setProperty(QStringLiteral("WangSet"), engine->newQMetaObject<EditableWangSet>());
-#endif
 
+    registerBase64(engine);
+    registerDialog(engine);
     registerFile(engine);
     registerFileInfo(engine);
+    registerGeometry(engine);
     registerProcess(engine);
-
     loadExtensions();
 }
 
 void ScriptManager::onScriptWarnings(const QList<QQmlError> &warnings)
 {
-    for (const auto &warning : warnings)
-        Tiled::ERROR(warning.toString());
+    for (const auto &warning : warnings) {
+        Tiled::ERROR(warning.toString(), [url = warning.url()] {
+            if (!url.isEmpty())
+                QDesktopServices::openUrl(url);
+        });
+    }
 }
 
 void ScriptManager::scriptFilesChanged(const QStringList &scriptFiles)

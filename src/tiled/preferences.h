@@ -23,12 +23,12 @@
 
 #include <QColor>
 #include <QDateTime>
+#include <QFont>
 #include <QObject>
 #include <QSettings>
 
-#include "filesystemwatcher.h"
 #include "map.h"
-#include "objecttypes.h"
+#include "tilededitor_global.h"
 
 namespace Tiled {
 
@@ -39,7 +39,7 @@ namespace Tiled {
  * Since it derives from QSettings, you can also store/retrieve arbitrary
  * values. The naming style for groups and keys is CamelCase.
  */
-class Preferences : public QSettings
+class TILED_EDITOR_EXPORT Preferences : public QSettings
 {
     Q_OBJECT
 
@@ -67,7 +67,7 @@ public:
     QColor gridColor() const;
     QColor backgroundFadeColor() const;
     int gridFine() const;
-    int gridMajor() const;
+    QSize gridMajor() const;
     qreal objectLineWidth() const;
 
     bool highlightCurrentLayer() const;
@@ -81,7 +81,7 @@ public:
     };
 
     ObjectLabelVisiblity objectLabelVisibility() const;
-    void setObjectLabelVisibility(ObjectLabelVisiblity visiblity);
+    void setObjectLabelVisibility(ObjectLabelVisiblity visibility);
 
     bool labelForHoveredObject() const;
     void setLabelForHoveredObject(bool enabled);
@@ -100,6 +100,11 @@ public:
 
     QColor selectionColor() const;
     void setSelectionColor(const QColor &color);
+
+    bool useCustomFont() const;
+    void setUseCustomFont(bool useCustomFont);
+    QFont customFont() const;
+    void setCustomFont(const QFont &font);
 
     Map::LayerDataFormat layerDataFormat() const;
     void setLayerDataFormat(Map::LayerDataFormat layerDataFormat);
@@ -134,12 +139,9 @@ public:
     bool useOpenGL() const;
     void setUseOpenGL(bool useOpenGL);
 
-    void setObjectTypes(const ObjectTypes &objectTypes);
     void setPropertyTypes(const SharedPropertyTypes &propertyTypes);
 
-    QString objectTypesFile() const;
     void setObjectTypesFile(const QString &filePath);
-    void setObjectTypesFileLastSaved(const QDateTime &time);
 
     QDate firstRun() const;
     int runCount() const;
@@ -180,6 +182,7 @@ public:
 
     static QString startupProject();
     static void setStartupProject(const QString &filePath);
+    static void setStartupSession(const QString &filePath);
 
 public slots:
     void setShowGrid(bool showGrid);
@@ -194,7 +197,9 @@ public slots:
     void setGridColor(QColor gridColor);
     void setBackgroundFadeColor(QColor backgroundFadeColor);
     void setGridFine(int gridFine);
-    void setGridMajor(int gridMajor);
+    void setGridMajor(QSize gridMajor);
+    void setGridMajorX(int gridMajorX);
+    void setGridMajorY(int gridMajorY);
     void setObjectLineWidth(qreal lineWidth);
     void setHighlightCurrentLayer(bool highlight);
     void setHighlightHoveredObject(bool highlight);
@@ -219,7 +224,7 @@ signals:
     void gridColorChanged(QColor gridColor);
     void backgroundFadeColorChanged(QColor backgroundFadeColor);
     void gridFineChanged(int gridFine);
-    void gridMajorChanged(int gridMajor);
+    void gridMajorChanged(QSize gridMajor);
     void objectLineWidthChanged(qreal lineWidth);
     void highlightCurrentLayerChanged(bool highlight);
     void highlightHoveredObjectChanged(bool highlight);
@@ -230,12 +235,11 @@ signals:
     void applicationStyleChanged(ApplicationStyle);
     void baseColorChanged(const QColor &baseColor);
     void selectionColorChanged(const QColor &selectionColor);
+    void applicationFontChanged();
 
     void useOpenGLChanged(bool useOpenGL);
 
     void languageChanged();
-
-    void objectTypesChanged();
 
     void propertyTypesChanged();
 
@@ -252,16 +256,13 @@ signals:
 private:
     void addToRecentFileList(const QString &fileName, QStringList &files);
 
-    void objectTypesFileChangedOnDisk();
-
-    FileSystemWatcher mWatcher;
     bool mPortable = false;
 
     QString mObjectTypesFile;
-    QDateTime mObjectTypesFileLastSaved;
 
     static Preferences *mInstance;
     static QString mStartupProject;
+    static QString mStartupSession;
 };
 
 

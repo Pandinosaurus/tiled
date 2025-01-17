@@ -36,8 +36,9 @@ static const char feedUrl[] = "https://www.mapeditor.org/rss.xml";
 
 namespace Tiled {
 
-NewsFeed::NewsFeed()
-    : mNetworkAccessManager(new QNetworkAccessManager(this))
+NewsFeed::NewsFeed(QObject *parent)
+    : QObject(parent)
+    , mNetworkAccessManager(new QNetworkAccessManager(this))
 {
     connect(mNetworkAccessManager, &QNetworkAccessManager::finished,
             this, &NewsFeed::finished);
@@ -47,12 +48,6 @@ NewsFeed::NewsFeed()
 
     setEnabled(preferences->displayNews());
     connect(preferences, &Preferences::displayNewsChanged, this, &NewsFeed::setEnabled);
-}
-
-NewsFeed &NewsFeed::instance()
-{
-    static NewsFeed newsFeed;
-    return newsFeed;
 }
 
 void NewsFeed::setEnabled(bool enabled)
@@ -119,7 +114,11 @@ int NewsFeed::unreadCount() const
 
 void NewsFeed::timerEvent(QTimerEvent *event)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    if (event->matches(mRefreshTimer)) {
+#else
     if (event->timerId() == mRefreshTimer.timerId()) {
+#endif
         refresh();
         return;
     }

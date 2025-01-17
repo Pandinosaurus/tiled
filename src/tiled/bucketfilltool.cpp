@@ -23,17 +23,14 @@
 
 #include "bucketfilltool.h"
 
-#include "addremovetileset.h"
 #include "brushitem.h"
 #include "tilepainter.h"
-#include "tile.h"
 #include "tilelayer.h"
 #include "mapdocument.h"
-#include "painttilelayer.h"
-#include "staggeredrenderer.h"
 #include "stampactions.h"
 
-#include <QApplication>
+#include <QCoreApplication>
+#include <QUndoStack>
 
 #include <memory>
 
@@ -45,7 +42,6 @@ BucketFillTool::BucketFillTool(QObject *parent)
                            QIcon(QLatin1String(
                                    ":images/22/stock-tool-bucket-fill.png")),
                            QKeySequence(Qt::Key_F),
-                           nullptr,
                            parent)
     , mLastFillMethod(mFillMethod)
 {
@@ -108,6 +104,8 @@ void BucketFillTool::tilePositionChanged(QPoint tilePos)
 
             if (computeRegion)
                 mFillRegion = regionComputer.computePaintableFillRegion(tilePos);
+            else
+                mFillRegion = QRegion();
         } else {
             // If holding shift, the region is the selection bounds
             mFillRegion = mapDocument()->selectedArea();

@@ -72,6 +72,17 @@ typedef struct {
 
 extern PyTypeObject PyPythonPythonScript_Type;
 
+
+typedef struct {
+    PyObject_HEAD
+    Python::PythonTilesetScript *obj;
+    PyObject *inst_dict;
+    PyBindGenWrapperFlags flags:8;
+} PyPythonPythonTilesetScript;
+
+
+extern PyTypeObject PyPythonPythonTilesetScript_Type;
+
 /* --- forward declarations --- */
 
 
@@ -3204,6 +3215,18 @@ _wrap_PyTiledObject__tp_init(void)
 
 
 PyObject *
+_wrap_PyTiledObject_className(PyTiledObject *self, PyObject *PYBINDGEN_UNUSED(_args), PyObject *PYBINDGEN_UNUSED(_kwargs))
+{
+    PyObject *py_retval;
+    QString retval;
+
+    retval = self->obj->className();
+    py_retval = Py_BuildValue((char *) "s", retval.toUtf8().data());
+    return py_retval;
+}
+
+
+PyObject *
 _wrap_PyTiledObject_properties(PyTiledObject *self, PyObject *PYBINDGEN_UNUSED(_args), PyObject *PYBINDGEN_UNUSED(_kwargs))
 {
     PyObject *py_retval;
@@ -3250,6 +3273,24 @@ _wrap_PyTiledObject_propertyType(PyTiledObject *self, PyObject *args, PyObject *
     }
     retval = self->obj->propertyType(QString::fromUtf8(prop));
     py_retval = Py_BuildValue((char *) "s", retval.toUtf8().data());
+    return py_retval;
+}
+
+
+PyObject *
+_wrap_PyTiledObject_setClassName(PyTiledObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *py_retval;
+    const char *n;
+    Py_ssize_t n_len;
+    const char *keywords[] = {"n", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, (char *) "s#", (char **) keywords, &n, &n_len)) {
+        return NULL;
+    }
+    self->obj->setClassName(QString::fromUtf8(n));
+    Py_INCREF(Py_None);
+    py_retval = Py_None;
     return py_retval;
 }
 
@@ -3363,9 +3404,11 @@ PyObject * _wrap_PyTiledObject_setProperty(PyTiledObject *self, PyObject *args, 
 }
 
 static PyMethodDef PyTiledObject_methods[] = {
+    {(char *) "className", (PyCFunction) _wrap_PyTiledObject_className, METH_NOARGS, "className()\n\n" },
     {(char *) "properties", (PyCFunction) _wrap_PyTiledObject_properties, METH_NOARGS, "properties()\n\n" },
     {(char *) "propertyAsString", (PyCFunction) _wrap_PyTiledObject_propertyAsString, METH_KEYWORDS|METH_VARARGS, "propertyAsString(prop)\n\ntype: prop: QString" },
     {(char *) "propertyType", (PyCFunction) _wrap_PyTiledObject_propertyType, METH_KEYWORDS|METH_VARARGS, "propertyType(prop)\n\ntype: prop: QString" },
+    {(char *) "setClassName", (PyCFunction) _wrap_PyTiledObject_setClassName, METH_KEYWORDS|METH_VARARGS, "setClassName(n)\n\ntype: n: QString" },
     {(char *) "setProperty", (PyCFunction) _wrap_PyTiledObject_setProperty, METH_KEYWORDS|METH_VARARGS, NULL },
     {NULL, NULL, 0, NULL}
 };
@@ -7964,6 +8007,102 @@ PyTypeObject PyPythonPythonScript_Type = {
 };
 
 
+
+
+static int
+_wrap_PyPythonPythonTilesetScript__tp_init(void)
+{
+    PyErr_SetString(PyExc_TypeError, "class 'PythonTilesetScript' cannot be constructed ()");
+    return -1;
+}
+
+static PyMethodDef PyPythonPythonTilesetScript_methods[] = {
+    {NULL, NULL, 0, NULL}
+};
+
+static void
+PyPythonPythonTilesetScript__tp_clear(PyPythonPythonTilesetScript *self)
+{
+    Py_CLEAR(self->inst_dict);
+        Python::PythonTilesetScript *tmp = self->obj;
+    self->obj = NULL;
+    if (!(self->flags&PYBINDGEN_WRAPPER_FLAG_OBJECT_NOT_OWNED)) {
+        delete tmp;
+    }
+}
+
+
+static int
+PyPythonPythonTilesetScript__tp_traverse(PyPythonPythonTilesetScript *self, visitproc visit, void *arg)
+{
+    Py_VISIT(self->inst_dict);
+
+    return 0;
+}
+
+
+static void
+_wrap_PyPythonPythonTilesetScript__tp_dealloc(PyPythonPythonTilesetScript *self)
+{
+    PyPythonPythonTilesetScript__tp_clear(self);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+PyTypeObject PyPythonPythonTilesetScript_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    (char *) "tiled.PythonTilesetScript",            /* tp_name */
+    sizeof(PyPythonPythonTilesetScript),                  /* tp_basicsize */
+    0,                                 /* tp_itemsize */
+    /* methods */
+    (destructor)_wrap_PyPythonPythonTilesetScript__tp_dealloc,        /* tp_dealloc */
+    (printfunc)0,                      /* tp_print */
+    (getattrfunc)NULL,       /* tp_getattr */
+    (setattrfunc)NULL,       /* tp_setattr */
+#if PY_MAJOR_VERSION >= 3
+    NULL,
+#else
+    (cmpfunc)NULL,           /* tp_compare */
+#endif
+    (reprfunc)NULL,             /* tp_repr */
+    (PyNumberMethods*)NULL,     /* tp_as_number */
+    (PySequenceMethods*)NULL, /* tp_as_sequence */
+    (PyMappingMethods*)NULL,   /* tp_as_mapping */
+    (hashfunc)NULL,             /* tp_hash */
+    (ternaryfunc)NULL,          /* tp_call */
+    (reprfunc)NULL,              /* tp_str */
+    (getattrofunc)NULL,     /* tp_getattro */
+    (setattrofunc)NULL,     /* tp_setattro */
+    (PyBufferProcs*)NULL,  /* tp_as_buffer */
+    Py_TPFLAGS_BASETYPE|Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_GC,                      /* tp_flags */
+    "",                        /* Documentation string */
+    (traverseproc)PyPythonPythonTilesetScript__tp_traverse,     /* tp_traverse */
+    (inquiry)PyPythonPythonTilesetScript__tp_clear,             /* tp_clear */
+    (richcmpfunc)NULL,   /* tp_richcompare */
+    0,             /* tp_weaklistoffset */
+    (getiterfunc)NULL,          /* tp_iter */
+    (iternextfunc)NULL,     /* tp_iternext */
+    (struct PyMethodDef*)PyPythonPythonTilesetScript_methods, /* tp_methods */
+    (struct PyMemberDef*)0,              /* tp_members */
+    0,                     /* tp_getset */
+    NULL,                              /* tp_base */
+    NULL,                              /* tp_dict */
+    (descrgetfunc)NULL,    /* tp_descr_get */
+    (descrsetfunc)NULL,    /* tp_descr_set */
+    offsetof(PyPythonPythonTilesetScript, inst_dict),                 /* tp_dictoffset */
+    (initproc)_wrap_PyPythonPythonTilesetScript__tp_init,             /* tp_init */
+    (allocfunc)PyType_GenericAlloc,           /* tp_alloc */
+    (newfunc)PyType_GenericNew,               /* tp_new */
+    (freefunc)0,             /* tp_free */
+    (inquiry)NULL,             /* tp_is_gc */
+    NULL,                              /* tp_bases */
+    NULL,                              /* tp_mro */
+    NULL,                              /* tp_cache */
+    NULL,                              /* tp_subclasses */
+    NULL,                              /* tp_weaklist */
+    (destructor) NULL                  /* tp_del */
+};
+
+
 #if PY_VERSION_HEX >= 0x03000000
 static struct PyModuleDef tiled_moduledef = {
     PyModuleDef_HEAD_INIT,
@@ -8009,6 +8148,11 @@ MOD_INIT(tiled)
         return MOD_ERROR;
     }
     PyModule_AddObject(m, (char *) "Plugin", (PyObject *) &PyPythonPythonScript_Type);
+    /* Register the 'Python::PythonTilesetScript' class */
+    if (PyType_Ready(&PyPythonPythonTilesetScript_Type)) {
+        return MOD_ERROR;
+    }
+    PyModule_AddObject(m, (char *) "TilesetPlugin", (PyObject *) &PyPythonPythonTilesetScript_Type);
     submodule = inittiled_qt();
     if (submodule == NULL) {
         return MOD_ERROR;
@@ -8049,6 +8193,37 @@ int _wrap_convert_py2c__Tiled__Map___star__(PyObject *value, Tiled::Map * *addre
     *address = tmp_Map->obj->clone().release();
     Py_DECREF(py_retval);
     return 1;
+}
+
+int _wrap_convert_py2c__Tiled__SharedTileset___star__(PyObject *value, Tiled::SharedTileset * *address)
+{
+    PyObject *py_retval;
+    PyTiledSharedTileset *tmp_SharedTileset;
+
+    py_retval = Py_BuildValue((char *) "(O)", value);
+    if (!PyArg_ParseTuple(py_retval, (char *) "O!", &PyTiledSharedTileset_Type, &tmp_SharedTileset)) {
+        Py_DECREF(py_retval);
+        return 0;
+    }
+    *address = new Tiled::SharedTileset(*tmp_SharedTileset->obj);
+    Py_DECREF(py_retval);
+    return 1;
+}
+
+PyObject* _wrap_convert_c2py__Tiled__Tileset_const(Tiled::Tileset const *cvalue)
+{
+    PyObject *py_retval;
+    PyTiledTileset *py_Tileset;
+    
+    if (!cvalue) {
+        Py_INCREF(Py_None);
+        return Py_None;
+    }
+    py_Tileset = PyObject_New(PyTiledTileset, &PyTiledTileset_Type);
+    py_Tileset->obj = (Tiled::Tileset *) cvalue;
+    py_Tileset->flags = PYBINDGEN_WRAPPER_FLAG_OBJECT_NOT_OWNED;
+    py_retval = Py_BuildValue((char *) "N", py_Tileset);
+    return py_retval;
 }
 
 

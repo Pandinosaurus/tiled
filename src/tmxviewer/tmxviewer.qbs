@@ -1,10 +1,8 @@
-import qbs 1.0
-
 TiledQtGuiApplication {
     name: "tmxviewer"
 
     Depends { name: "libtiled" }
-    Depends { name: "Qt"; submodules: ["widgets"]; versionAtLeast: "5.6" }
+    Depends { name: "Qt"; submodules: ["widgets"]; versionAtLeast: "5.15" }
 
     cpp.includePaths: ["."]
 

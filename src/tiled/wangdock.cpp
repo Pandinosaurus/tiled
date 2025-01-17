@@ -160,6 +160,8 @@ WangDock::WangDock(QWidget *parent)
             this, &WangDock::checkAnyWangSets);
     connect(mWangSetProxyModel, &QAbstractItemModel::modelReset,
             this, &WangDock::checkAnyWangSets);
+    connect(mWangSetProxyModel, &QAbstractItemModel::modelReset,
+            mWangSetView, &WangSetView::expandAll);
     connect(mWangSetProxyModel, &QAbstractItemModel::rowsInserted,
             this, &WangDock::expandRows);
 
@@ -198,9 +200,9 @@ WangDock::WangDock(QWidget *parent)
     mWangSetToolBar->addAction(mDuplicateWangSet);
     mWangSetToolBar->addAction(mRemoveWangSet);
 
-    connect(mAddCornerWangSet, &QAction::triggered, this, [this] { addWangSetRequested(WangSet::Corner); });
-    connect(mAddEdgeWangSet, &QAction::triggered, this, [this] { addWangSetRequested(WangSet::Edge); });
-    connect(mAddMixedWangSet, &QAction::triggered, this, [this] { addWangSetRequested(WangSet::Mixed); });
+    connect(mAddCornerWangSet, &QAction::triggered, this, [this] { emit addWangSetRequested(WangSet::Corner); });
+    connect(mAddEdgeWangSet, &QAction::triggered, this, [this] { emit addWangSetRequested(WangSet::Edge); });
+    connect(mAddMixedWangSet, &QAction::triggered, this, [this] { emit addWangSetRequested(WangSet::Mixed); });
     connect(mDuplicateWangSet, &QAction::triggered, this, &WangDock::duplicateWangSetRequested);
     connect(mRemoveWangSet, &QAction::triggered, this, &WangDock::removeWangSetRequested);
 
@@ -235,7 +237,7 @@ WangDock::WangDock(QWidget *parent)
     mEraseWangIdsButton->setIcon(QIcon(QLatin1String(":images/22/stock-tool-eraser.png")));
     mEraseWangIdsButton->setCheckable(true);
     mEraseWangIdsButton->setAutoExclusive(true);
-    mEraseWangIdsButton->setChecked(mCurrentWangId == 0);
+    mEraseWangIdsButton->setChecked(mCurrentWangId.isEmpty());
 
     connect(mEraseWangIdsButton, &QPushButton::clicked,
             this, &WangDock::activateErase);
@@ -368,6 +370,20 @@ void WangDock::setDocument(Document *document)
     }
 }
 
+int WangDock::currentWangColor() const
+{
+    QItemSelectionModel *selectionModel = mWangColorView->selectionModel();
+    const auto currentIndex = selectionModel->currentIndex();
+    int color = 0;
+
+    if (currentIndex.isValid()) {
+        QModelIndex index = static_cast<QAbstractProxyModel*>(mWangColorView->model())->mapToSource(currentIndex);
+        color = mWangColorModel->colorAt(index);
+    }
+
+    return color;
+}
+
 void WangDock::editWangSetName(WangSet *wangSet)
 {
     const QModelIndex index = wangSetIndex(wangSet);
@@ -434,14 +450,7 @@ void WangDock::refreshCurrentWangId()
 
 void WangDock::refreshCurrentWangColor()
 {
-    QItemSelectionModel *selectionModel = mWangColorView->selectionModel();
-    const auto currentIndex = selectionModel->currentIndex();
-    int color = 0;
-
-    if (currentIndex.isValid()) {
-        QModelIndex index = static_cast<QAbstractProxyModel*>(mWangColorView->model())->mapToSource(currentIndex);
-        color = mWangColorModel->colorAt(index);
-    }
+    const int color = currentWangColor();
 
     mEraseWangIdsButton->setChecked(color == 0);
     mRemoveColor->setEnabled(color != 0);
@@ -463,8 +472,19 @@ void WangDock::wangColorIndexPressed(const QModelIndex &index)
 void WangDock::documentChanged(const ChangeEvent &change)
 {
     switch (change.type) {
+    case ChangeEvent::DocumentAboutToReload:
+        // A reload of the TilesetDocument means our previously referenced
+        // WangSet will no longer be valid.
+        setCurrentWangSet(nullptr);
+        break;
+    case ChangeEvent::DocumentReloaded:
+        if (auto tilesetDocument = qobject_cast<TilesetDocument*>(mDocument)) {
+            QScopedValueRollback<bool> initializing(mInitializing, true);
+            setCurrentWangSet(firstWangSet(tilesetDocument));
+        }
+        break;
     case ChangeEvent::WangSetChanged:
-        if (static_cast<const WangSetChangeEvent&>(change).properties & WangSetChangeEvent::TypeProperty)
+        if (static_cast<const WangSetChangeEvent&>(change).property == WangSetChangeEvent::TypeProperty)
             mWangTemplateModel->wangSetChanged();
         break;
     default:
@@ -472,10 +492,15 @@ void WangDock::documentChanged(const ChangeEvent &change)
     }
 }
 
-void WangDock::wangSetChanged()
+void WangDock::wangSetChanged(WangSet *wangSet)
 {
-    mWangColorModel->resetModel();
-    mWangColorView->expandAll();
+    if (mCurrentWangSet != wangSet)
+        return;
+
+    if (mWangColorModel) {
+        mWangColorModel->resetModel();
+        mWangColorView->expandAll();
+    }
 
     refreshCurrentWangColor();
     refreshCurrentWangId();
@@ -546,7 +571,7 @@ void WangDock::setCurrentWangSet(WangSet *wangSet)
     TilesetDocument *tilesetDocument = nullptr;
 
     if (wangSet) {
-        auto sharedTileset = wangSet->tileset()->sharedPointer();
+        auto sharedTileset = wangSet->tileset()->sharedFromThis();
         auto documentManager = DocumentManager::instance();
 
         tilesetDocument = documentManager->findTilesetDocument(sharedTileset);
@@ -653,7 +678,7 @@ void WangDock::onWangIdUsedChanged(WangId wangId)
         mWangTemplateView->update(index);
 }
 
-void WangDock::onColorCaptured(int color)
+void WangDock::setCurrentWangColor(int color)
 {
     const QModelIndex index = mWangColorModel->colorIndex(color);
 

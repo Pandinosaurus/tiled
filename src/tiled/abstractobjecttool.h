@@ -39,7 +39,6 @@ class MapObjectItem;
 class AbstractObjectTool : public AbstractTool
 {
     Q_OBJECT
-    Q_INTERFACES(Tiled::AbstractTool)
 
 public:
     enum SelectionBehavior {
@@ -60,6 +59,9 @@ public:
                        const QKeySequence &shortcut,
                        QObject *parent = nullptr);
 
+    void activate(MapScene *scene) override;
+    void deactivate(MapScene *scene) override;
+
     void keyPressed(QKeyEvent *event) override;
     void mouseLeft() override;
     void mouseMoved(const QPointF &pos, Qt::KeyboardModifiers modifiers) override;
@@ -73,12 +75,6 @@ public:
     void filterMapObjects(QList<MapObject*> &mapObjects) const;
 
 protected:
-    /**
-     * Overridden to only enable this tool when the currently selected layer is
-     * an object group.
-     */
-    void updateEnabledState() override;
-
     ObjectGroup *currentObjectGroup() const;
     QList<MapObject*> mapObjectsAt(const QPointF &pos) const;
     MapObject *topMostMapObjectAt(const QPointF &pos) const;
@@ -107,6 +103,8 @@ private:
 
     void showContextMenu(MapObject *clickedObject,
                          QPoint screenPos);
+
+    void setActionsEnabled(bool enabled);
 
     QAction *mFlipHorizontal;
     QAction *mFlipVertical;

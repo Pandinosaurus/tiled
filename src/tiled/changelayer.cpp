@@ -23,191 +23,170 @@
 #include "changeevents.h"
 #include "document.h"
 #include "layer.h"
-#include "map.h"
 
 #include <QCoreApplication>
 
 namespace Tiled {
 
 SetLayerName::SetLayerName(Document *document,
-                           Layer *layer,
-                           const QString &name):
-    mDocument(document),
-    mLayer(layer),
-    mName(name)
+                           QList<Layer *> layers,
+                           const QString &name)
+    : ChangeValue<Layer, QString>(document, std::move(layers), name)
 {
     setText(QCoreApplication::translate("Undo Commands", "Rename Layer"));
 }
 
-void SetLayerName::undo()
+QString SetLayerName::getValue(const Layer *layer) const
 {
-    swapName();
+    return layer->name();
 }
 
-void SetLayerName::redo()
+void SetLayerName::setValue(Layer *layer, const QString &name) const
 {
-    swapName();
-}
-
-void SetLayerName::swapName()
-{
-    const QString previousName = mLayer->name();
-    mLayer->setName(mName);
-    mName = previousName;
-
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::NameProperty));
+    layer->setName(name);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::NameProperty));
 }
 
 
 SetLayerVisible::SetLayerVisible(Document *document,
-                                 Layer *layer,
+                                 QList<Layer *> layers,
                                  bool visible)
-    : mDocument(document)
-    , mLayer(layer)
-    , mVisible(visible)
+    : ChangeValue<Layer, bool>(document, std::move(layers), visible)
 {
     if (visible)
-        setText(QCoreApplication::translate("Undo Commands",
-                                            "Show Layer"));
+        setText(QCoreApplication::translate("Undo Commands", "Show Layer"));
     else
-        setText(QCoreApplication::translate("Undo Commands",
-                                            "Hide Layer"));
+        setText(QCoreApplication::translate("Undo Commands", "Hide Layer"));
 }
 
-void SetLayerVisible::swap()
+bool SetLayerVisible::getValue(const Layer *layer) const
 {
-    const bool previousVisible = mLayer->isVisible();
-    mLayer->setVisible(mVisible);
-    mVisible = previousVisible;
+    return layer->isVisible();
+}
 
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::VisibleProperty));
+void SetLayerVisible::setValue(Layer *layer, const bool &value) const
+{
+    layer->setVisible(value);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::VisibleProperty));
 }
 
 
 SetLayerLocked::SetLayerLocked(Document *document,
-                               Layer *layer,
+                               QList<Layer *> layers,
                                bool locked)
-    : mDocument(document)
-    , mLayer(layer)
-    , mLocked(locked)
+    : ChangeValue<Layer, bool>(document, std::move(layers), locked)
 {
     if (locked)
-        setText(QCoreApplication::translate("Undo Commands",
-                                            "Lock Layer"));
+        setText(QCoreApplication::translate("Undo Commands", "Lock Layer"));
     else
-        setText(QCoreApplication::translate("Undo Commands",
-                                            "Unlock Layer"));
+        setText(QCoreApplication::translate("Undo Commands", "Unlock Layer"));
 }
 
-void SetLayerLocked::swap()
+bool SetLayerLocked::getValue(const Layer *layer) const
 {
-    const bool previousLocked = mLayer->isLocked();
-    mLayer->setLocked(mLocked);
-    mLocked = previousLocked;
+    return layer->isLocked();
+}
 
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::LockedProperty));
+void SetLayerLocked::setValue(Layer *layer, const bool &value) const
+{
+    layer->setLocked(value);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::LockedProperty));
 }
 
 
 SetLayerTintColor::SetLayerTintColor(Document *document,
-                                     Layer *layer,
+                                     QList<Layer *> layers,
                                      QColor tintColor)
-    : mDocument(document)
-    , mLayer(layer)
-    , mOldTintColor(layer->tintColor())
-    , mNewTintColor(tintColor)
+    : ChangeValue<Layer, QColor>(document, std::move(layers), tintColor)
 {
     setText(QCoreApplication::translate("Undo Commands",
                                         "Change Layer Tint Color"));
 }
 
-bool SetLayerTintColor::mergeWith(const QUndoCommand *other)
+QColor SetLayerTintColor::getValue(const Layer *layer) const
 {
-    const SetLayerTintColor *o = static_cast<const SetLayerTintColor*>(other);
-    if (!(mDocument == o->mDocument &&
-          mLayer == o->mLayer))
-        return false;
-
-    mNewTintColor = o->mNewTintColor;
-    return true;
+    return layer->tintColor();
 }
 
-void SetLayerTintColor::setTintColor(QColor tintColor)
+void SetLayerTintColor::setValue(Layer *layer, const QColor &value) const
 {
-    mLayer->setTintColor(tintColor);
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::TintColorProperty));
+    layer->setTintColor(value);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::TintColorProperty));
 }
 
 
 SetLayerOpacity::SetLayerOpacity(Document *document,
-                                 Layer *layer,
+                                 QList<Layer *> layers,
                                  qreal opacity)
-    : mDocument(document)
-    , mLayer(layer)
-    , mOldOpacity(layer->opacity())
-    , mNewOpacity(opacity)
+    : ChangeValue<Layer, qreal>(document, std::move(layers), opacity)
 {
     setText(QCoreApplication::translate("Undo Commands",
                                         "Change Layer Opacity"));
 }
 
-bool SetLayerOpacity::mergeWith(const QUndoCommand *other)
+qreal SetLayerOpacity::getValue(const Layer *layer) const
 {
-    const SetLayerOpacity *o = static_cast<const SetLayerOpacity*>(other);
-    if (!(mDocument == o->mDocument &&
-          mLayer == o->mLayer))
-        return false;
-
-    mNewOpacity = o->mNewOpacity;
-    return true;
+    return layer->opacity();
 }
 
-void SetLayerOpacity::setOpacity(qreal opacity)
+void SetLayerOpacity::setValue(Layer *layer, const qreal &value) const
 {
-    mLayer->setOpacity(opacity);
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::OpacityProperty));
+    layer->setOpacity(value);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::OpacityProperty));
 }
 
 
 SetLayerOffset::SetLayerOffset(Document *document,
-                               Layer *layer,
+                               QList<Layer *> layers,
                                const QPointF &offset,
                                QUndoCommand *parent)
-    : QUndoCommand(parent)
-    , mDocument(document)
-    , mLayer(layer)
-    , mOldOffset(layer->offset())
-    , mNewOffset(offset)
+    : ChangeValue<Layer, QPointF>(document, std::move(layers), offset, parent)
 {
     setText(QCoreApplication::translate("Undo Commands",
                                         "Change Layer Offset"));
 }
 
-void SetLayerOffset::setOffset(const QPointF &offset)
+SetLayerOffset::SetLayerOffset(Document *document,
+                               QList<Layer *> layers,
+                               const QVector<QPointF> &offsets,
+                               QUndoCommand *parent)
+    : ChangeValue<Layer, QPointF>(document, std::move(layers), offsets, parent)
 {
-    mLayer->setOffset(offset);
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::OffsetProperty));
+    setText(QCoreApplication::translate("Undo Commands",
+                                        "Change Layer Offset"));
+}
+
+QPointF SetLayerOffset::getValue(const Layer *layer) const
+{
+    return layer->offset();
+}
+
+void SetLayerOffset::setValue(Layer *layer, const QPointF &value) const
+{
+    layer->setOffset(value);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::OffsetProperty));
 }
 
 
 SetLayerParallaxFactor::SetLayerParallaxFactor(Document *document,
-                                               Layer *layer,
+                                               QList<Layer *> layers,
                                                const QPointF &parallaxFactor,
                                                QUndoCommand *parent)
-    : QUndoCommand(parent)
-    , mDocument(document)
-    , mLayer(layer)
-    , mOldParallaxFactor(layer->parallaxFactor())
-    , mNewParallaxFactor(parallaxFactor)
+    : ChangeValue<Layer, QPointF>(document, std::move(layers), parallaxFactor, parent)
 {
     setText(QCoreApplication::translate("Undo Commands",
                                         "Change Layer Parallax Factor"));
 }
 
-void SetLayerParallaxFactor::setParallaxFactor(const QPointF &parallaxFactor)
+QPointF SetLayerParallaxFactor::getValue(const Layer *layer) const
 {
-    mLayer->setParallaxFactor(parallaxFactor);
-    emit mDocument->changed(LayerChangeEvent(mLayer, LayerChangeEvent::ParallaxFactorProperty));
+    return layer->parallaxFactor();
+}
+
+void SetLayerParallaxFactor::setValue(Layer *layer, const QPointF &value) const
+{
+    layer->setParallaxFactor(value);
+    emit document()->changed(LayerChangeEvent(layer, LayerChangeEvent::ParallaxFactorProperty));
 }
 
 
@@ -215,21 +194,21 @@ SetTileLayerSize::SetTileLayerSize(Document *document,
                                    TileLayer *tileLayer,
                                    QSize size,
                                    QUndoCommand *parent)
-    : QUndoCommand(parent)
-    , mDocument(document)
-    , mTileLayer(tileLayer)
-    , mSize(size)
+    : ChangeValue<TileLayer, QSize>(document, { tileLayer }, size, parent)
 {
     setText(QCoreApplication::translate("Undo Commands",
                                         "Change Tile Layer Size"));
 }
 
-void SetTileLayerSize::swap()
+QSize SetTileLayerSize::getValue(const TileLayer *layer) const
 {
-    QSize oldSize = mTileLayer->size();
-    mTileLayer->setSize(mSize);
-    mSize = oldSize;
-    emit mDocument->changed(TileLayerChangeEvent(mTileLayer, TileLayerChangeEvent::SizeProperty));
+    return layer->size();
+}
+
+void SetTileLayerSize::setValue(TileLayer *layer, const QSize &value) const
+{
+    layer->setSize(value);
+    emit document()->changed(TileLayerChangeEvent(layer, TileLayerChangeEvent::SizeProperty));
 }
 
 } // namespace Tiled

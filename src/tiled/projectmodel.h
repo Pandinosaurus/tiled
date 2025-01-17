@@ -21,7 +21,7 @@
 #pragma once
 
 #include "filesystemwatcher.h"
-#include "project.h"
+#include "projectdocument.h"
 
 #include <QAbstractListModel>
 #include <QFileIconProvider>
@@ -41,6 +41,7 @@ struct FolderEntry
     {}
 
     QString filePath;
+    QIcon fileIcon;     // initialized on-demand
     std::vector<std::unique_ptr<FolderEntry>> entries;
     FolderEntry *parent = nullptr;
 };
@@ -55,8 +56,9 @@ public:
 
     void updateNameFilters();
 
-    void setProject(Project project);
+    void setProject(std::unique_ptr<Project> project);
     Project &project();
+    EditableAsset *editableProject();
 
     void addFolder(const QString &folder);
     void removeFolder(int row);
@@ -67,11 +69,7 @@ public:
         int offset;
         QString path;
 
-#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
-        QStringRef relativePath() const { return path.midRef(offset); }
-#else
         QStringView relativePath() const { return QStringView(path).mid(offset); }
-#endif
     };
 
     QVector<Match> findFiles(const QStringList &words) const;
@@ -113,7 +111,8 @@ private:
     void scheduleFolderScan(const QString &folder);
     void folderScanned(FolderEntry *entry);
 
-    Project mProject;
+    std::unique_ptr<ProjectDocument> mProjectDocument;
+    Project mEmptyProject;
     QFileIconProvider mFileIconProvider;
     QStringList mNameFilters;
     QTimer mUpdateNameFiltersTimer;
@@ -125,11 +124,5 @@ private:
     QStringList mFoldersPendingScan;
     FileSystemWatcher mWatcher;
 };
-
-
-inline Project &ProjectModel::project()
-{
-    return mProject;
-}
 
 } // namespace Tiled

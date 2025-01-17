@@ -38,7 +38,7 @@
      <x>0</x>
      <y>0</y>
      <width>553</width>
-     <height>31</height>
+     <height>23</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -64,6 +64,8 @@
      <property name="title">
       <string>&amp;New</string>
      </property>
+     <addaction name="actionNewProject"/>
+     <addaction name="separator"/>
      <addaction name="actionNewMap"/>
      <addaction name="actionNewTileset"/>
     </widget>
@@ -73,10 +75,19 @@
      </property>
      <addaction name="actionEditCommands"/>
     </widget>
+    <widget class="QMenu" name="menuRecentProjects">
+     <property name="title">
+      <string>&amp;Recent Projects</string>
+     </property>
+     <property name="toolTipsVisible">
+      <bool>true</bool>
+     </property>
+    </widget>
     <addaction name="menuNew"/>
     <addaction name="actionOpen"/>
     <addaction name="actionOpenFileInProject"/>
     <addaction name="menuRecentFiles"/>
+    <addaction name="menuRecentProjects"/>
     <addaction name="separator"/>
     <addaction name="actionSave"/>
     <addaction name="actionSaveAs"/>
@@ -90,6 +101,7 @@
     <addaction name="separator"/>
     <addaction name="actionClose"/>
     <addaction name="actionCloseAll"/>
+    <addaction name="actionCloseProject"/>
     <addaction name="actionQuit"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
@@ -119,6 +131,7 @@
      <string>&amp;Map</string>
     </property>
     <addaction name="actionAddExternalTileset"/>
+    <addaction name="actionAddAutomappingRulesTileset"/>
     <addaction name="separator"/>
     <addaction name="actionResizeMap"/>
     <addaction name="actionOffsetMap"/>
@@ -151,6 +164,7 @@
      <addaction name="actionSnapToFineGrid"/>
      <addaction name="actionSnapToPixels"/>
     </widget>
+    <addaction name="actionSearchActions"/>
     <addaction name="actionShowGrid"/>
     <addaction name="actionShowTileObjectOutlines"/>
     <addaction name="actionShowObjectReferences"/>
@@ -182,24 +196,6 @@
     <property name="title">
      <string>&amp;Project</string>
     </property>
-    <widget class="QMenu" name="menuRecentProjects">
-     <property name="title">
-      <string>&amp;Recent Projects</string>
-     </property>
-     <property name="icon">
-      <iconset resource="tiled.qrc">
-       <normaloff>:/images/16/document-open-recent.png</normaloff>:/images/16/document-open-recent.png</iconset>
-     </property>
-     <property name="toolTipsVisible">
-      <bool>true</bool>
-     </property>
-    </widget>
-    <addaction name="actionOpenProject"/>
-    <addaction name="menuRecentProjects"/>
-    <addaction name="separator"/>
-    <addaction name="actionSaveProjectAs"/>
-    <addaction name="actionCloseProject"/>
-    <addaction name="separator"/>
     <addaction name="actionAddFolderToProject"/>
     <addaction name="actionRefreshProjectFolders"/>
     <addaction name="separator"/>
@@ -213,6 +209,7 @@
      <property name="title">
       <string>&amp;Unload World</string>
      </property>
+     <addaction name="actionUnloadAllWorlds"/>
     </widget>
     <widget class="QMenu" name="menuSaveWorld">
      <property name="title">
@@ -347,7 +344,7 @@
     <string>Save &amp;As...</string>
    </property>
    <property name="shortcut">
-    <string notr="true">Ctrl+Alt+S</string>
+    <string notr="true">Ctrl+Shift+S</string>
    </property>
   </action>
   <action name="actionNewTileset">
@@ -540,9 +537,6 @@
    <property name="text">
     <string>Save All</string>
    </property>
-   <property name="shortcut">
-    <string notr="true">Ctrl+Shift+S</string>
-   </property>
   </action>
   <action name="actionDocumentation">
    <property name="text">
@@ -711,11 +705,6 @@
     <string>Community Forum ↗</string>
    </property>
   </action>
-  <action name="actionOpenProject">
-   <property name="text">
-    <string>&amp;Open Project...</string>
-   </property>
-  </action>
   <action name="actionCloseProject">
    <property name="text">
     <string>&amp;Close Project</string>
@@ -733,11 +722,6 @@
   <action name="actionAddFolderToProject">
    <property name="text">
     <string>Add Folder to Project...</string>
-   </property>
-  </action>
-  <action name="actionSaveProjectAs">
-   <property name="text">
-    <string>Save Project As...</string>
    </property>
   </action>
   <action name="actionRefreshProjectFolders">
@@ -759,17 +743,6 @@
    </property>
    <property name="shortcut">
     <string notr="true">Ctrl+Shift+T</string>
-   </property>
-  </action>
-  <action name="actionWorldMoveMap">
-   <property name="text">
-    <string>Move Map</string>
-   </property>
-   <property name="toolTip">
-    <string>Move Map</string>
-   </property>
-   <property name="shortcut">
-    <string notr="true">Ctrl+Shift+M</string>
    </property>
   </action>
   <action name="actionProjectProperties">
@@ -803,6 +776,35 @@
    </property>
    <property name="text">
     <string>Show &amp;World</string>
+   </property>
+  </action>
+  <action name="actionNewProject">
+   <property name="text">
+    <string>&amp;New Project...</string>
+   </property>
+   <property name="shortcut">
+    <string notr="true">Ctrl+Shift+N</string>
+   </property>
+  </action>
+  <action name="actionAddAutomappingRulesTileset">
+   <property name="text">
+    <string>Add Automapping Rules Tileset</string>
+   </property>
+  </action>
+  <action name="actionSearchActions">
+   <property name="text">
+    <string>Search Actions...</string>
+   </property>
+   <property name="toolTip">
+    <string>Search actions available in Tiled</string>
+   </property>
+   <property name="shortcut">
+    <string notr="true">Ctrl+Shift+P</string>
+   </property>
+  </action>
+  <action name="actionUnloadAllWorlds">
+   <property name="text">
+    <string>Unload All Worlds</string>
    </property>
   </action>
  </widget>

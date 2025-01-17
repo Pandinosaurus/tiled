@@ -1,46 +1,86 @@
-import qbs 1.0
+import qbs.Probes as Probes
 
 DynamicLibrary {
     targetName: "tiled"
+    cpp.dynamicLibraryPrefix: "lib"
 
     Depends { name: "cpp" }
-    Depends { name: "Qt"; submodules: "gui"; versionAtLeast: "5.6" }
+    Depends { name: "Qt"; submodules: "gui"; versionAtLeast: "5.15" }
 
-    Properties {
-        condition: !qbs.toolchain.contains("msvc")
-        cpp.dynamicLibraries: base.concat(["z"])
+    Probes.PkgConfigProbe {
+        id: pkgConfigZstd
+        name: "libzstd"
+        forStaticBuild: project.staticZstd
     }
 
-    cpp.cxxLanguageVersion: "c++14"
+    cpp.cxxLanguageVersion: "c++17"
+    cpp.cxxFlags: {
+        var flags = base;
+        if (qbs.toolchain.contains("msvc")) {
+            if (Qt.core.versionMajor >= 6 && Qt.core.versionMinor >= 3)
+                flags.push("/permissive-");
+        }
+        return flags;
+    }
     cpp.visibility: "minimal"
     cpp.defines: {
         var defs = [
             "TILED_LIBRARY",
+            "TILED_LIB_DIR=\"" + project.libDir + "\"",
             "QT_NO_CAST_FROM_ASCII",
             "QT_NO_CAST_TO_ASCII",
             "QT_NO_URL_CAST_FROM_STRING",
-            "QT_DISABLE_DEPRECATED_BEFORE=QT_VERSION_CHECK(5,15,0)",
+            "QT_DISABLE_DEPRECATED_BEFORE=0x050F00",
             "QT_NO_DEPRECATED_WARNINGS",
             "_USE_MATH_DEFINES",
         ]
 
-        if (project.enableZstd)
+        if (project.staticZstd || pkgConfigZstd.found)
             defs.push("TILED_ZSTD_SUPPORT");
+
+        if (project.windowsLayout)
+            defs.push("TILED_WINDOWS_LAYOUT");
 
         return defs;
     }
+    cpp.dynamicLibraries: {
+        var libs = base;
 
-    cpp.includePaths: [ "../../zstd/lib" ]
+        if (!qbs.toolchain.contains("msvc"))
+            libs.push("z");
 
-    Properties {
-        condition: qbs.targetOS.contains("macos")
-        cpp.cxxFlags: ["-Wno-unknown-pragmas"]
+        if (pkgConfigZstd.found && !project.staticZstd)
+            libs = libs.concat(pkgConfigZstd.libraries);
+
+        return libs;
+    }
+    cpp.staticLibraries: {
+        var libs = base;
+
+        if (project.staticZstd) {
+            if (pkgConfigZstd.found)
+                libs = libs.concat(pkgConfigZstd.libraries);
+            else
+                libs.push("zstd");
+        }
+
+        return libs;
     }
 
     Properties {
-        condition: project.enableZstd
-        cpp.staticLibraries: ["zstd"]
-        cpp.libraryPaths: ["../../zstd/lib"]
+        condition: pkgConfigZstd.found
+        cpp.cxxFlags: outer.concat(pkgConfigZstd.cflags)
+        cpp.libraryPaths: outer.concat(pkgConfigZstd.libraryPaths)
+        cpp.linkerFlags: outer.concat(pkgConfigZstd.linkerFlags)
+    }
+
+    // When libzstd was not found but staticZstd is enabled, assume that zstd
+    // has been compiled in a "zstd" directory at the repository root (this is
+    // done by the autobuilds for Windows and macOS).
+    Properties {
+        condition: !pkgConfigZstd.found && project.staticZstd
+        cpp.libraryPaths: outer.concat(["../../zstd/lib"])
+        cpp.includePaths: outer.concat(["../../zstd/lib"])
     }
 
     Properties {
@@ -135,12 +175,14 @@ DynamicLibrary {
         "tilesetformat.h",
         "tilesetmanager.cpp",
         "tilesetmanager.h",
+        "tmxmapformat.cpp",
+        "tmxmapformat.h",
         "varianttomapconverter.cpp",
         "varianttomapconverter.h",
         "wangset.cpp",
         "wangset.h",
-        "worldmanager.cpp",
-        "worldmanager.h",
+        "world.cpp",
+        "world.h",
     ]
 
     Group {
@@ -160,15 +202,14 @@ DynamicLibrary {
         cpp.includePaths: "."
     }
 
-    Group {
-        condition: !qbs.targetOS.contains("darwin")
-        qbs.install: true
-        qbs.installDir: {
-            if (qbs.targetOS.contains("windows"))
+    install: !qbs.targetOS.contains("darwin")
+    installDir: {
+        if (qbs.targetOS.contains("windows"))
+            if (project.windowsLayout)
                 return ""
             else
-                return "lib"
-        }
-        fileTagsFilter: "dynamiclibrary"
+                return "bin"
+        else
+            return project.libDir
     }
 }

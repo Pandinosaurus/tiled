@@ -32,11 +32,13 @@
 #include "object.h"
 #include "tiled.h"
 
+#include <QPainterPath>
 #include <QPixmap>
 #include <QSharedPointer>
 #include <QUrl>
 
 #include <memory>
+#include <optional>
 
 namespace Tiled {
 
@@ -72,6 +74,7 @@ public:
     QSharedPointer<Tileset> sharedTileset() const;
 
     const QPixmap &image() const;
+    const QPainterPath &imageShape() const;
     void setImage(const QPixmap &image);
 
     const Tile *currentFrameTile() const;
@@ -79,14 +82,18 @@ public:
     const QUrl &imageSource() const;
     void setImageSource(const QUrl &imageSource);
 
+    const QRect &imageRect() const;
+    void setImageRect(const QRect &imageRect);
+
     int width() const;
     int height() const;
     QSize size() const;
 
     QPoint offset() const;
 
-    const QString &type() const;
-    void setType(const QString &type);
+    // For Python API compatibility
+    const QString &type() const { return className(); }
+    void setType(const QString &type) { setClassName(type); };
 
     qreal probability() const;
     void setProbability(qreal probability);
@@ -111,9 +118,10 @@ private:
     int mId;
     Tileset *mTileset;
     QPixmap mImage;
+    mutable std::optional<QPainterPath> mImageShape;   // cache
     QUrl mImageSource;
+    QRect mImageRect;
     LoadingStatus mImageStatus;
-    QString mType;
     qreal mProbability;
     std::unique_ptr<ObjectGroup> mObjectGroup;
 
@@ -141,23 +149,6 @@ inline Tileset *Tile::tileset() const
 }
 
 /**
- * Returns the image of this tile.
- */
-inline const QPixmap &Tile::image() const
-{
-    return mImage;
-}
-
-/**
- * Sets the image of this tile.
- */
-inline void Tile::setImage(const QPixmap &image)
-{
-    mImage = image;
-    mImageStatus = image.isNull() ? LoadingError : LoadingReady;
-}
-
-/**
  * Returns the URL of the external image that represents this tile.
  * When this tile doesn't refer to an external image, an empty URL is
  * returned.
@@ -173,11 +164,19 @@ inline void Tile::setImageSource(const QUrl &imageSource)
 }
 
 /**
+ * Returns the image source rect in pixels.
+ */
+inline const QRect &Tile::imageRect() const
+{
+    return mImageRect;
+}
+
+/**
  * Returns the width of this tile.
  */
 inline int Tile::width() const
 {
-    return mImage.width();
+    return mImageRect.width();
 }
 
 /**
@@ -185,7 +184,7 @@ inline int Tile::width() const
  */
 inline int Tile::height() const
 {
-    return mImage.height();
+    return mImageRect.height();
 }
 
 /**
@@ -193,26 +192,7 @@ inline int Tile::height() const
  */
 inline QSize Tile::size() const
 {
-    return mImage.size();
-}
-
-/**
- * Returns the type of this tile. Tile objects that do not have a type
- * explicitly set on them are assumed to be of the type returned by this
- * function.
- */
-inline const QString &Tile::type() const
-{
-    return mType;
-}
-
-/**
- * Sets the type of this tile.
- * \sa type()
- */
-inline void Tile::setType(const QString &type)
-{
-    mType = type;
+    return mImageRect.size();
 }
 
 /**

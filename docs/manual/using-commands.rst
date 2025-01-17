@@ -81,8 +81,9 @@ the following variables:
 ``%projectpath``
     the path in which the current project is located.
 
-``%objecttype``
-    the type of the currently selected object, if any.
+``%objectclass``
+    the class of the currently selected object, if any (also available as
+    ``%objecttype`` for compatibility with Tiled < 1.9).
 
 ``%objectid``
     the ID of the currently selected object, if any.
@@ -92,10 +93,17 @@ the following variables:
 
 .. raw:: html
 
-   <div class="new">New in Tiled 21.4</div>
+   <div class="new new-prev">Since Tiled 1.6</div>
 
 ``%tileid``
     a comma-separated list with the IDs of the selected tiles, if any.
+
+.. raw:: html
+
+   <div class="new">New in Tiled 1.9</div>
+
+``%worldfile``
+    the full path of the world the current map is part of, if any.
 
 For the working directory field, you can additionally use the following
 variable:

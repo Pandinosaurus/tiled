@@ -1,6 +1,6 @@
 /*
  * flipmapobjects.cpp
- * Copyright 2013, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
+ * Copyright 2013-2022, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
  * Copyright 2017, Klimov Viktor <vitek.fomino@bk.ru>
  *
  * This file is part of Tiled.
@@ -23,73 +23,48 @@
 
 #include "changeevents.h"
 #include "document.h"
-#include "mapobject.h"
 
 #include <QCoreApplication>
 
 using namespace Tiled;
 
+static constexpr MapObject::ChangedProperties propertiesChangedByFlip {
+    MapObject::CellProperty,
+    MapObject::PositionProperty,
+    MapObject::RotationProperty,
+    MapObject::ShapeProperty,
+};
+
 FlipMapObjects::FlipMapObjects(Document *document,
                                const QList<MapObject *> &mapObjects,
-                               FlipDirection flipDirection)
+                               FlipDirection flipDirection,
+                               QPointF flipOrigin)
     : mDocument(document)
     , mMapObjects(mapObjects)
     , mFlipDirection(flipDirection)
+    , mFlipOrigin(flipOrigin)
 {
     setText(QCoreApplication::translate("Undo Commands",
                                         "Flip %n Object(s)",
                                         nullptr, mapObjects.size()));
 
-    //computing objects center
-    QRectF boundaryObjectsRect;
-    for (MapObject *object : mMapObjects) {
-        QTransform objectTransform;
-        objectTransform.translate(object->x(), object->y());
-        objectTransform.rotate(object->rotation());
-        objectTransform.translate(-object->x(), -object->y());
+    mOldChangedProperties.reserve(mMapObjects.size());
+    mNewChangedProperties.reserve(mMapObjects.size());
 
-        if (!object->cell().isEmpty()) { //computing bound rect for cell
-            QRectF cellRect = QRectF(object->x(),
-                                     object->y(),
-                                     object->width(), -object->height()).normalized();
-            boundaryObjectsRect = boundaryObjectsRect.united(objectTransform.mapRect(cellRect));
-        } else if (!object->polygon().empty()) { //computing bound rect for polygon
-            const QPolygonF &objectPolygon = object->polygon();
-            QTransform polygonToMapTransform;
-            polygonToMapTransform.translate(object->x(),
-                                            object->y());
-            polygonToMapTransform.rotate(object->rotation());
-            boundaryObjectsRect = boundaryObjectsRect.united(polygonToMapTransform.mapRect(QRectF(objectPolygon.boundingRect())));
-        } else { //computing bound rect for other
-            boundaryObjectsRect = boundaryObjectsRect.united(objectTransform.mapRect(object->bounds()));
-        }
-
-        mOldCellStates.append(object->propertyChanged(MapObject::CellProperty));
-        mNewCellStates.append(true);
-
-        mOldRotationStates.append(object->propertyChanged(MapObject::RotationProperty));
-        mNewRotationStates.append(true);
+    for (const MapObject *object : mMapObjects) {
+        mOldChangedProperties.append(object->changedProperties());
+        mNewChangedProperties.append(object->changedProperties() | propertiesChangedByFlip);
     }
-    mObjectsCenter = boundaryObjectsRect.center();
 }
 
 void FlipMapObjects::flip()
 {
-    //flip objects
     for (int i = 0; i < mMapObjects.size(); ++i) {
-        mMapObjects[i]->flip(mFlipDirection, mObjectsCenter);
-
-        mMapObjects[i]->setPropertyChanged(MapObject::CellProperty, mNewCellStates[i]);
-        mMapObjects[i]->setPropertyChanged(MapObject::RotationProperty, mNewRotationStates[i]);
+        mMapObjects[i]->flip(mFlipDirection, mFlipOrigin);
+        mMapObjects[i]->setChangedProperties(mNewChangedProperties[i]);
     }
 
-    mOldRotationStates.swap(mNewRotationStates);
+    mOldChangedProperties.swap(mNewChangedProperties);
 
-    constexpr MapObject::ChangedProperties changedProperties {
-        MapObject::CellProperty,
-        MapObject::PositionProperty,
-        MapObject::RotationProperty,
-        MapObject::ShapeProperty,
-    };
-    emit mDocument->changed(MapObjectsChangeEvent(mMapObjects, changedProperties));
+    emit mDocument->changed(MapObjectsChangeEvent(mMapObjects, propertiesChangedByFlip));
 }

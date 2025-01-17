@@ -46,6 +46,7 @@ in what changed between Tiled versions.
    incremented to match minor Tiled releases.
 -  **tiledversion:** The Tiled version used to save the file (since Tiled
    1.0.1). May be a date (for snapshot builds). (optional)
+-  **class:** The class of this map (since 1.9, defaults to "").
 -  **orientation:** Map orientation. Tiled supports "orthogonal",
    "isometric", "staggered" and "hexagonal" (since 0.11).
 -  **renderorder:** The order in which tiles on tile layers are rendered.
@@ -99,6 +100,8 @@ rendered by Tiled.
 The ``staggered`` orientation refers to an isometric map using staggered
 axes.
 
+The tilesets used by the map should always be listed before the layers.
+
 Can contain at most one: :ref:`tmx-properties`,
 :ref:`tmx-editorsettings` (since 1.3)
 
@@ -140,18 +143,26 @@ Can contain at most one: :ref:`tmx-chunksize`, :ref:`tmx-export`
    maps to the first tile in this tileset).
 -  **source:** If this tileset is stored in an external TSX (Tile Set XML)
    file, this attribute refers to that file. That TSX file has the same
-   structure as the ``<tileset>`` element described here. (There is the
+   structure as the :ref:`tmx-tileset` element described here. (There is the
    firstgid attribute missing and this source attribute is also not
    there. These two attributes are kept in the TMX map, since they are
    map specific.)
 -  **name:** The name of this tileset.
--  **tilewidth:** The (maximum) width of the tiles in this tileset.
--  **tileheight:** The (maximum) height of the tiles in this tileset.
+-  **class:** The class of this tileset (since 1.9, defaults to "").
+-  **tilewidth:** The width of the tiles in this tileset, which should be at
+   least 1 except in the case of image collection tilesets (in which case it
+   stores the maximum tile width).
+-  **tileheight:** The height of the tiles in this tileset, which should be at
+   least 1 except in the case of image collection tilesets (in which case it
+   stores the maximum tile height).
 -  **spacing:** The spacing in pixels between the tiles in this tileset
-   (applies to the tileset image, defaults to 0)
+   (applies to the tileset image, defaults to 0). Irrelevant for image
+   collection tilesets.
 -  **margin:** The margin around the tiles in this tileset (applies to the
-   tileset image, defaults to 0)
--  **tilecount:** The number of tiles in this tileset (since 0.13)
+   tileset image, defaults to 0). Irrelevant for image collection tilesets.
+-  **tilecount:** The number of tiles in this tileset (since 0.13). Note that
+   there can be tiles with a higher ID than the tile count, in case the tileset
+   is an image collection from which tiles have been removed.
 -  **columns:** The number of tile columns in the tileset. For image
    collection tilesets it is editable and is used when displaying the
    tileset. (since 0.15)
@@ -161,15 +172,26 @@ Can contain at most one: :ref:`tmx-chunksize`, :ref:`tmx-export`
    ``bottomright``. The default value is ``unspecified``, for compatibility
    reasons. When unspecified, tile objects use ``bottomleft`` in orthogonal mode
    and ``bottom`` in isometric mode. (since 1.4)
+-  **tilerendersize:** The size to use when rendering tiles from this tileset
+   on a tile layer. Valid values are ``tile`` (the default) and ``grid``. When
+   set to ``grid``, the tile is drawn at the tile grid size of the map. (since 1.9)
+-  **fillmode:** The fill mode to use when rendering tiles from this tileset.
+   Valid values are ``stretch`` (the default) and ``preserve-aspect-fit``. Only
+   relevant when the tiles are not rendered at their native size, so this
+   applies to resized tile objects or in combination with ``tilerendersize`` set
+   to ``grid``. (since 1.9)
 
-If there are multiple ``<tileset>`` elements, they are in ascending
+A tileset can be either *based on a single image*, which is cut into tiles
+based on the given parameters, or a *collection of images*, in which case each
+tile defines its own image. In the first case there is a single child
+:ref:`tmx-image` element. In the latter case, each child
+:ref:`tmx-tileset-tile` element contains an :ref:`tmx-image` element.
+
+If there are multiple :ref:`tmx-tileset` elements, they are in ascending
 order of their ``firstgid`` attribute. The first tileset always has a
 ``firstgid`` value of 1. Since Tiled 0.15, image collection tilesets do
 not necessarily number their tiles consecutively since gaps can occur
 when removing tiles.
-
-Image collection tilesets have no ``<image>`` tag. Instead, each tile has
-an ``<image>`` tag.
 
 Can contain at most one: :ref:`tmx-image`, :ref:`tmx-tileoffset`,
 :ref:`tmx-grid` (since 1.0), :ref:`tmx-properties`, :ref:`tmx-terraintypes`,
@@ -208,7 +230,7 @@ rendered.
 <image>
 ~~~~~~~
 
--  **format:** Used for embedded images, in combination with a ``data``
+-  **format:** Used for embedded images, in combination with a :ref:`tmx-data`
    child element. Valid values are file extensions like ``png``,
    ``gif``, ``jpg``, ``bmp``, etc.
 -  *id:* Used by some versions of Tiled Java. Deprecated and unsupported.
@@ -221,10 +243,10 @@ rendered.
    correction when the image changes)
 -  **height:** The image height in pixels (optional)
 
-Note that it is not currently possible to use Tiled to create maps with
-embedded image data, even though the TMX format supports this. It is
-possible to create such maps using ``libtiled`` (Qt/C++) or
-`tmxlib <https://pypi.python.org/pypi/tmxlib>`__ (Python).
+Tiled maps or tilesets with embedded image data can currently only be created
+using the :doc:`JavaScript API </manual/scripting>`, or in custom tools
+based on ``libtiled`` (Qt/C++) or `tmxlib
+<https://pypi.python.org/pypi/tmxlib>`__ (Python).
 
 Can contain at most one: :ref:`tmx-data`
 
@@ -233,8 +255,12 @@ Can contain at most one: :ref:`tmx-data`
 <terraintypes>
 ~~~~~~~~~~~~~~
 
+**Deprecated:** This element has been deprecated since Tiled 1.5, in favour of
+the :ref:`tmx-wangsets` element, which is more flexible. Tilesets containing
+terrain types are automatically saved with a Wang set instead.
+
 This element defines an array of terrain types, which can be referenced
-from the ``terrain`` attribute of the ``tile`` element.
+from the ``terrain`` attribute of the :ref:`tmx-tileset-tile` element.
 
 Can contain any number: :ref:`tmx-terrain`
 
@@ -242,6 +268,9 @@ Can contain any number: :ref:`tmx-terrain`
 
 <terrain>
 ^^^^^^^^^
+
+**Deprecated:** This element has been deprecated since Tiled 1.5, in favour of
+the :ref:`tmx-wangcolor` element.
 
 -  **name:** The name of the terrain type.
 -  **tile:** The local tile-id of the tile that represents the terrain
@@ -269,15 +298,20 @@ tiles (e.g. to extend a Wang set by transforming existing tiles).
 ~~~~~~
 
 -  **id:** The local tile ID within its tileset.
--  **type:** The type of the tile. Refers to an object type and is used
-   by tile objects. (optional) (since 1.0)
--  **terrain:** Defines the terrain type of each corner of the tile,
+-  **type:** The class of the tile. Is inherited by tile objects. (since 1.0,
+   defaults to "", was saved as ``class`` in 1.9)
+-  *terrain:* Defines the terrain type of each corner of the tile,
    given as comma-separated indexes in the terrain types array in the
    order top-left, top-right, bottom-left, bottom-right. Leaving out a
-   value means that corner has no terrain. (optional)
+   value means that corner has no terrain. (deprecated since 1.5 in favour of
+   :ref:`tmx-wangtile`)
 -  **probability:** A percentage indicating the probability that this
    tile is chosen when it competes with others while editing with the
    terrain tool. (defaults to 0)
+-  **x:** The X position of the sub-rectangle representing this tile (default: 0)
+-  **y:** The Y position of the sub-rectangle representing this tile (default: 0)
+-  **width:** The width of the sub-rectangle representing this tile (defaults to the image width)
+-  **height:** The height of the sub-rectangle representing this tile (defaults to the image height)
 
 Can contain at most one: :ref:`tmx-properties`, :ref:`tmx-image` (since
 0.9), :ref:`tmx-objectgroup`, :ref:`tmx-animation`
@@ -318,15 +352,15 @@ Can contain any number: :ref:`tmx-wangset`
 <wangset>
 ^^^^^^^^^
 
-Defines a list of corner colors and a list of edge colors, and any
-number of Wang tiles using these colors.
+Defines a list of colors and any number of Wang tiles using these colors.
 
 -  **name:** The name of the Wang set.
+-  **class:** The class of the Wang set (since 1.9, defaults to "").
 -  **tile:** The tile ID of the tile representing this Wang set.
 
 Can contain at most one: :ref:`tmx-properties`
 
-Can contain up to 255: :ref:`tmx-wangcolor` (since Tiled 1.5)
+Can contain up to 254: :ref:`tmx-wangcolor` (255 since Tiled 1.5, 254 since Tiled 1.10.2)
 
 Can contain any number: :ref:`tmx-wangtile`
 
@@ -338,6 +372,7 @@ Can contain any number: :ref:`tmx-wangtile`
 A color that can be used to define the corner and/or edge of a Wang tile.
 
 -  **name:** The name of this color.
+-  **class:** The class of this color (since 1.9, defaults to "").
 -  **color:** The color in ``#RRGGBB`` format (example: ``#c17d11``).
 -  **tile:** The tile ID of the tile representing this color.
 -  **probability:** The relative probability that this color is chosen
@@ -354,13 +389,13 @@ Defines a Wang tile, by referring to a tile in the tileset and
 associating it with a certain Wang ID.
 
 -  **tileid:** The tile ID.
--  **wangid:** "The Wang ID, given by a comma-separated list of indexes
-   (starting from 1, because 0 means _unset_) referring to the Wang colors in
-   the Wang set in the following order: top, top right, right, bottom right,
-   bottom, bottom left, left, top left (since Tiled 1.5). Before Tiled 1.5, the
-   Wang ID was saved as a 32-bit unsigned integer stored in the format
-   ``0xCECECECE`` (where each C is a corner color and each E is an edge color,
-   in reverse order)."
+-  **wangid:** The Wang ID, since Tiled 1.5 given by a comma-separated list of
+   indexes (0-254) referring to the Wang colors in the Wang set in the order:
+   top, top-right, right, bottom-right, bottom, bottom-left, left, top-left.
+   Index 0 means *unset* and index 1 refers to the first Wang color. Before
+   Tiled 1.5, the Wang ID was saved as a 32-bit unsigned integer stored in the
+   format ``0xCECECECE`` (where each C is a corner color and each E is an edge
+   color, in reverse order).
 -  *hflip:* Whether the tile is flipped horizontally (removed in Tiled 1.5).
 -  *vflip:* Whether the tile is flipped vertically (removed in Tiled 1.5).
 -  *dflip:* Whether the tile is flipped on its diagonal (removed in Tiled 1.5).
@@ -374,10 +409,12 @@ All :ref:`tmx-tileset` tags shall occur before the first :ref:`tmx-layer` tag
 so that parsers may rely on having the tilesets before needing to resolve
 tiles.
 
--  **id:** Unique ID of the layer. Each layer that added to a map gets
-   a unique id. Even if a layer is deleted, no layer ever gets the same
-   ID. Can not be changed in Tiled. (since Tiled 1.2)
+-  **id:** Unique ID of the layer (defaults to 0, with valid IDs being at least
+   1). Each layer that added to a map gets a unique id. Even if a layer is
+   deleted, no layer ever gets the same ID. Can not be changed in Tiled.
+   (since Tiled 1.2)
 -  **name:** The name of the layer. (defaults to "")
+-  **class:** The class of the layer (since 1.9, defaults to "").
 -  *x:* The x coordinate of the layer in tiles. Defaults to 0 and can not be changed in Tiled.
 -  *y:* The y coordinate of the layer in tiles. Defaults to 0 and can not be changed in Tiled.
 -  **width:** The width of the layer in tiles. Always the same as the map width for fixed-size maps.
@@ -400,14 +437,18 @@ Can contain at most one: :ref:`tmx-properties`, :ref:`tmx-data`
 ~~~~~~
 
 -  **encoding:** The encoding used to encode the tile layer data. When used,
-   it can be "base64" and "csv" at the moment. (optional)
+   it can be "base64" and, when used for tile layer data, "csv". (optional)
 -  **compression:** The compression used to compress the tile layer data.
    Tiled supports "gzip", "zlib" and (as a compile-time option since Tiled 1.3)
    "zstd".
 
-When no encoding or compression is given, the tiles are stored as
-individual XML ``tile`` elements. Next to that, the easiest format to
-parse is the "csv" (comma separated values) format.
+This element is usually used as a child of a :ref:`tmx-layer` element, and
+contains the actual tile layer data. It can also occur as a child of
+an :ref:`tmx-image` element, where it can store embedded image data.
+
+When no encoding or compression is given, the tiles are stored as individual
+XML :ref:`tmx-tilelayer-tile` elements, but this option is deprecated. Next to
+that, the easiest format to parse is the "csv" (comma separated values) format.
 
 The base64-encoded and optionally compressed layer data is somewhat more
 complicated to parse. First you need to base64-decode it, then you may
@@ -434,7 +475,7 @@ Can contain any number: :ref:`tmx-tilelayer-tile`, :ref:`tmx-chunk`
 -  **height:** The height of the chunk in tiles.
 
 This is currently added only for infinite maps. The contents of a chunk
-element is same as that of the ``data`` element, except it stores the
+element is same as that of the :ref:`tmx-data` element, except it stores the
 data of the area specified in the attributes.
 
 Can contain any number: :ref:`tmx-tilelayer-tile`
@@ -446,22 +487,23 @@ Can contain any number: :ref:`tmx-tilelayer-tile`
 
 -  **gid:** The global tile ID (default: 0).
 
-Not to be confused with the ``tile`` element inside a ``tileset``, this
-element defines the value of a single tile on a tile layer. This is
-however the most inefficient way of storing the tile layer data, and
-should generally be avoided.
+Not to be confused with the :ref:`tmx-tileset-tile` element inside a
+:ref:`tmx-tileset`, this element defines the value of a single tile on a tile
+layer. This is however the most inefficient way of storing the tile layer data,
+and should generally be avoided.
 
 .. _tmx-objectgroup:
 
 <objectgroup>
 -------------
 
--  **id:** Unique ID of the layer. Each layer that added to a map gets
-   a unique id. Even if a layer is deleted, no layer ever gets the same
-   ID. Can not be changed in Tiled. (since Tiled 1.2)
+-  **id:** Unique ID of the layer (defaults to 0, with valid IDs being at least
+   1). Each layer that added to a map gets a unique id. Even if a layer is
+   deleted, no layer ever gets the same ID. Can not be changed in Tiled.
+   (since Tiled 1.2)
 -  **name:** The name of the object group. (defaults to "")
--  **color:** The color used to display the objects in this group. (defaults
-   to gray ("#a0a0a4"))
+-  **class:** The class of the object group (since 1.9, defaults to "").
+-  **color:** The color used to display the objects in this group. (optional)
 -  *x:* The x coordinate of the object group in tiles. Defaults to 0 and
    can no longer be changed in Tiled.
 -  *y:* The y coordinate of the object group in tiles. Defaults to 0 and
@@ -476,6 +518,8 @@ should generally be avoided.
    to 0) (since 0.14)
 -  **offsety:** Vertical offset for this object group in pixels. (defaults
    to 0) (since 0.14)
+-  **parallaxx:** Horizontal :ref:`parallax factor <parallax-factor>` for this object group. Defaults to 1. (since 1.5)
+-  **parallaxy:** Vertical :ref:`parallax factor <parallax-factor>` for this object group. Defaults to 1. (since 1.5)
 -  **draworder:** Whether the objects are drawn according to the order of
    appearance ("index") or sorted by their y-coordinate ("topdown").
    (defaults to "topdown")
@@ -492,11 +536,13 @@ Can contain any number: :ref:`tmx-object`
 <object>
 ~~~~~~~~
 
--  **id:** Unique ID of the object. Each object that is placed on a map gets
-   a unique id. Even if an object was deleted, no object gets the same
-   ID. Can not be changed in Tiled. (since Tiled 0.11)
+-  **id:** Unique ID of the object (defaults to 0, with valid IDs being at
+   least 1). Each object that is placed on a map gets a unique id. Even if an
+   object was deleted, no object gets the same ID. Can not be changed in Tiled.
+   (since Tiled 0.11)
 -  **name:** The name of the object. An arbitrary string. (defaults to "")
--  **type:** The type of the object. An arbitrary string. (defaults to "")
+-  **type:** The class of the object. An arbitrary string. (defaults to "",
+   was saved as ``class`` in 1.9)
 -  **x:** The x coordinate of the object in pixels. (defaults to 0)
 -  **y:** The y coordinate of the object in pixels. (defaults to 0)
 -  **width:** The width of the object in pixels. (defaults to 0)
@@ -617,14 +663,18 @@ of the object.
 <imagelayer>
 ------------
 
--  **id:** Unique ID of the layer. Each layer that added to a map gets
-   a unique id. Even if a layer is deleted, no layer ever gets the same
-   ID. Can not be changed in Tiled. (since Tiled 1.2)
+-  **id:** Unique ID of the layer (defaults to 0, with valid IDs being at least
+   1). Each layer that added to a map gets a unique id. Even if a layer is
+   deleted, no layer ever gets the same ID. Can not be changed in Tiled.
+   (since Tiled 1.2)
 -  **name:** The name of the image layer. (defaults to "")
+-  **class:** The class of the image layer (since 1.9, defaults to "").
 -  **offsetx:** Horizontal offset of the image layer in pixels. (defaults to
    0) (since 0.15)
 -  **offsety:** Vertical offset of the image layer in pixels. (defaults to
    0) (since 0.15)
+-  **parallaxx:** Horizontal :ref:`parallax factor <parallax-factor>` for this layer. Defaults to 1. (since 1.5)
+-  **parallaxy:** Vertical :ref:`parallax factor <parallax-factor>` for this layer. Defaults to 1. (since 1.5)
 -  *x:* The x position of the image layer in pixels. (defaults to 0, deprecated
    since 0.15)
 -  *y:* The y position of the image layer in pixels. (defaults to 0, deprecated
@@ -645,16 +695,17 @@ Can contain at most one: :ref:`tmx-properties`, :ref:`tmx-image`
 <group>
 -------
 
--  **id:** Unique ID of the layer. Each layer that added to a map gets
-   a unique id. Even if a layer is deleted, no layer ever gets the same
-   ID. Can not be changed in Tiled. (since Tiled 1.2)
+-  **id:** Unique ID of the layer (defaults to 0, with valid IDs being at least
+   1). Each layer that added to a map gets a unique id. Even if a layer is
+   deleted, no layer ever gets the same ID. Can not be changed in Tiled.
+   (since Tiled 1.2)
 -  **name:** The name of the group layer. (defaults to "")
--  **offsetx:** Horizontal offset of the group layer in pixels. (defaults to
-   0)
--  **offsety:** Vertical offset of the group layer in pixels. (defaults to
-   0)
--  **opacity:** The opacity of the layer as a value from 0 to 1. (defaults to
-   1)
+-  **class:** The class of the group layer (since 1.9, defaults to "").
+-  **offsetx:** Horizontal offset of the group layer in pixels. (defaults to 0)
+-  **offsety:** Vertical offset of the group layer in pixels. (defaults to 0)
+-  **parallaxx:** Horizontal :ref:`parallax factor <parallax-factor>` for this group. Defaults to 1. (since 1.5)
+-  **parallaxy:** Vertical :ref:`parallax factor <parallax-factor>` for this group. Defaults to 1. (since 1.5)
+-  **opacity:** The opacity of the layer as a value from 0 to 1. (defaults to 1)
 -  **visible:** Whether the layer is shown (1) or hidden (0). (defaults to 1)
 -  **tintcolor:** A color that is multiplied with any graphics drawn by any child layers, in ``#AARRGGBB`` or ``#RRGGBB`` format (optional).
 
@@ -708,6 +759,10 @@ integer (the ID of the referenced object, or 0 when no object is referenced).
 When used on objects in the Tile Collision Editor, they can only refer to
 other objects on the same tile.
 
+Class properties will have their member values stored in a nested
+:ref:`tmx-properties` element. Only the actually set members are saved. When no
+members have been set the ``properties`` element is left out entirely.
+
 When a string property contains newlines, the current version of Tiled
 will write out the value as characters contained inside the ``property``
 element rather than as the ``value`` attribute. It is possible that a
@@ -743,7 +798,12 @@ Example of a template file:
      <object name="cactus" gid="31" width="81" height="101"/>
     </template>
 
-Can contain at most one: :ref:`tmx-tileset`, :ref:`tmx-object`
+Any tileset reference should always come before the object. Embedded tilesets
+are not supported.
+
+Can contain at most one: :ref:`tmx-tileset`
+
+Should contain exactly one: :ref:`tmx-object`
 
 --------------
 

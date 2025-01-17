@@ -22,7 +22,6 @@
 
 #include "map.h"
 #include "mapdocument.h"
-#include "tilelayer.h"
 
 #include <memory>
 
@@ -39,7 +38,7 @@ void CaptureStampHelper::beginCapture(QPoint tilePosition)
     mCaptureStart = tilePosition;
 }
 
-TileStamp CaptureStampHelper::endCapture(const MapDocument &mapDocument, QPoint tilePosition)
+TileStamp CaptureStampHelper::endCapture(MapDocument &mapDocument, QPoint tilePosition, bool cut)
 {
     mActive = false;
 
@@ -52,32 +51,20 @@ TileStamp CaptureStampHelper::endCapture(const MapDocument &mapDocument, QPoint 
 
     auto stamp = std::make_unique<Map>(mapParameters);
 
-    // Iterate all layers to make sure we're adding layers in the right order
-    LayerIterator it(mapDocument.map(), Layer::TileLayerType);
-    while (auto tileLayer = static_cast<TileLayer*>(it.next())) {
-        if (!mapDocument.selectedLayers().contains(tileLayer))
-            continue;
+    mapDocument.map()->copyLayers(mapDocument.selectedLayers(),
+                                  captured,
+                                  *stamp);
 
-        // Intersect with the layer and translate to layer coordinates
-        QRect capturedFromLayer = captured.intersected(tileLayer->bounds());
-        capturedFromLayer.translate(-tileLayer->position());
-
-        auto capture = tileLayer->copy(capturedFromLayer);
-        capture->setName(tileLayer->name());
-        capture->setPosition(capturedFromLayer.topLeft() - captured.topLeft());
-        capture->setOpacity(tileLayer->opacity());
-        capture->setTintColor(tileLayer->tintColor());
-
-        stamp->addLayer(std::move(capture));
+    // Erase captured area when cutting
+    if (cut && !captured.isEmpty()) {
+        const bool allLayers = false;
+        const bool mergeable = false;
+        mapDocument.eraseTileLayers(captured, allLayers, mergeable,
+                                    Document::tr("Cut"));
     }
 
     if (stamp->layerCount() > 0) {
-        // Adjust the stagger index when the capture starts at an odd offset
-        const auto staggerIndex = stamp->staggerIndex();
-        const int staggerOffSet = (stamp->staggerAxis() == Map::StaggerX ? captured.x()
-                                                                         : captured.y()) % 2;
-
-        stamp->setStaggerIndex(static_cast<Map::StaggerIndex>((staggerIndex + staggerOffSet) % 2));
+        stamp->normalizeTileLayerPositionsAndMapSize();
 
         // Add tileset references to map
         stamp->addTilesets(stamp->usedTilesets());
@@ -95,12 +82,16 @@ void CaptureStampHelper::reset()
 
 QRect CaptureStampHelper::capturedArea(QPoint tilePosition) const
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QRect captured = QRect(mCaptureStart, tilePosition).normalized();
     if (captured.width() == 0)
         captured.adjust(-1, 0, 1, 0);
     if (captured.height() == 0)
         captured.adjust(0, -1, 0, 1);
     return captured;
+#else
+    return QRect::span(mCaptureStart, tilePosition);
+#endif
 }
 
 } // namespace Tiled

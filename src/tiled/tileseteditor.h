@@ -40,6 +40,7 @@ namespace Tiled {
 class Tile;
 class Tileset;
 
+class EditableWangSet;
 class PropertiesDock;
 class TemplatesDock;
 class TileAnimationEditor;
@@ -55,7 +56,9 @@ class TilesetEditor final : public Editor
 {
     Q_OBJECT
 
-    Q_PROPERTY(Tiled::TileCollisionDock *collisionEditor READ collisionEditor)
+    Q_PROPERTY(Tiled::TileCollisionDock *collisionEditor READ collisionEditor CONSTANT)
+    Q_PROPERTY(Tiled::EditableWangSet *currentWangSet READ currentWangSet  WRITE setCurrentWangSet NOTIFY currentWangSetChanged)
+    Q_PROPERTY(int currentWangColorIndex READ currentWangColorIndex WRITE setCurrentWangColorIndex  NOTIFY currentWangColorIndexChanged)
 
 public:
     explicit TilesetEditor(QObject *parent = nullptr);
@@ -97,8 +100,17 @@ public:
     TileAnimationEditor *tileAnimationEditor() const;
     TileCollisionDock *collisionEditor() const;
 
+    EditableWangSet *currentWangSet() const;
+    void setCurrentWangSet(EditableWangSet *wangSet);
+
+    int currentWangColorIndex() const;
+    void setCurrentWangColorIndex(int newIndex);
+
 signals:
     void currentTileChanged(Tile *tile);
+
+    void currentWangSetChanged();
+    void currentWangColorIndexChanged(int colorIndex);
 
 private:
     void currentWidgetChanged();
@@ -126,7 +138,7 @@ private:
 
     void updateAddRemoveActions();
 
-    void currentWangSetChanged(WangSet *wangSet);
+    void onCurrentWangSetChanged(WangSet *wangSet);
     void currentWangIdChanged(WangId wangId);
     void wangColorChanged(int color);
     void addWangSet(WangSet::Type type);
@@ -200,5 +212,3 @@ inline TileCollisionDock *TilesetEditor::collisionEditor() const
 }
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::TilesetEditor*)

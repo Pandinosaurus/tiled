@@ -20,9 +20,11 @@
 
 #include "scriptedtool.h"
 
+#include "actionmanager.h"
 #include "brushitem.h"
 #include "editablemap.h"
 #include "editabletile.h"
+#include "logginginterface.h"
 #include "mapdocument.h"
 #include "pluginmanager.h"
 #include "scriptmanager.h"
@@ -33,6 +35,7 @@
 #include <QJSEngine>
 #include <QKeyEvent>
 #include <QQmlEngine>
+#include <QToolBar>
 
 namespace Tiled {
 
@@ -40,22 +43,43 @@ ScriptedTool::ScriptedTool(Id id, QJSValue object, QObject *parent)
     : AbstractTileTool(id, QStringLiteral("<unnamed tool>"), QIcon(), QKeySequence(), nullptr, parent)
     , mScriptObject(std::move(object))
 {
+    // Read out the properties from the script object before setting its prototype
     const QJSValue nameProperty = mScriptObject.property(QStringLiteral("name"));
-    if (nameProperty.isString())
-        setName(nameProperty.toString());
-
     const QJSValue iconProperty = mScriptObject.property(QStringLiteral("icon"));
-    if (iconProperty.isString())
-        setIconFileName(iconProperty.toString());
-
+    const QJSValue toolBarActionsProperty = mScriptObject.property(QStringLiteral("toolBarActions"));
     const QJSValue usesSelectedTilesProperty = mScriptObject.property(QStringLiteral("usesSelectedTiles"));
-    if (usesSelectedTilesProperty.isBool())
-        setUsesSelectedTiles(usesSelectedTilesProperty.toBool());
+    const QJSValue usesWangSetsProperty = mScriptObject.property(QStringLiteral("usesWangSets"));
+    const QJSValue targetLayerTypeProperty = mScriptObject.property(QStringLiteral("targetLayerType"));
 
     // Make members of ScriptedTool available through the original object
     auto &scriptManager = ScriptManager::instance();
     auto self = scriptManager.engine()->newQObject(this);
     mScriptObject.setPrototype(self);
+
+    if (nameProperty.isString())
+        setName(nameProperty.toString());
+
+    if (iconProperty.isString())
+        setIconFileName(iconProperty.toString());
+
+    if (toolBarActionsProperty.isArray()) {
+        QStringList actionNames;
+        const int length = toolBarActionsProperty.property(QStringLiteral("length")).toInt();
+        for (int i = 0; i < length; ++i)
+            actionNames.append(toolBarActionsProperty.property(i).toString());
+        setToolBarActions(actionNames);
+    }
+
+    if (usesSelectedTilesProperty.isBool())
+        setUsesSelectedTiles(usesSelectedTilesProperty.toBool());
+
+    if (usesWangSetsProperty.isBool())
+        setUsesWangSets(usesWangSetsProperty.toBool());
+
+    if (targetLayerTypeProperty.isNumber())
+        setTargetLayerType(targetLayerTypeProperty.toInt());
+    else
+        setTargetLayerType(0);  // default behavior is not to disable based on current layer
 
     PluginManager::addObject(this);
 }
@@ -74,7 +98,7 @@ EditableMap *ScriptedTool::editableMap() const
 EditableTile *ScriptedTool::editableTile() const
 {
     if (Tile *t = tile()) {
-        auto tileset = t->tileset()->sharedPointer();
+        auto tileset = t->tileset()->sharedFromThis();
 
         if (auto tilesetDocument = TilesetDocument::findDocumentForTileset(tileset)) {
             EditableTileset *editable = tilesetDocument->editable();
@@ -204,10 +228,16 @@ void ScriptedTool::languageChanged()
     call(QStringLiteral("languageChanged"));
 }
 
-void ScriptedTool::populateToolBar(QToolBar *)
+void ScriptedTool::populateToolBar(QToolBar *toolBar)
 {
-    // todo: consider how to support this (is it enough to have a list of
-    // actions?)
+    for (const Id actionId : mToolBarActions) {
+        if (actionId == "-")
+            toolBar->addSeparator();
+        else if (auto action = ActionManager::findAction(actionId))
+            toolBar->addAction(action);
+        else
+            Tiled::ERROR(QCoreApplication::translate("Script Errors", "Could not find action '%1'").arg(actionId.toString()));
+    }
 }
 
 bool ScriptedTool::validateToolObject(QJSValue value)
@@ -232,10 +262,20 @@ void ScriptedTool::setIconFileName(const QString &fileName)
     QString iconFile = fileName;
 
     const QString ext = QStringLiteral("ext:");
-    if (!iconFile.startsWith(ext))
+    if (!iconFile.startsWith(ext) && !iconFile.startsWith(QLatin1Char(':')))
         iconFile.prepend(ext);
 
     setIcon(QIcon { iconFile });
+}
+
+QStringList ScriptedTool::toolBarActions() const
+{
+    return idsToNames(mToolBarActions);
+}
+
+void ScriptedTool::setToolBarActions(const QStringList &actionNames)
+{
+    mToolBarActions = namesToIds(actionNames);
 }
 
 void ScriptedTool::mapDocumentChanged(MapDocument *oldDocument,
@@ -270,10 +310,10 @@ void ScriptedTool::updateStatusInfo()
 void ScriptedTool::updateEnabledState()
 {
     if (!call(QStringLiteral("updateEnabledState"))) {
-        // Skipping AbstractTileTool since we do not want the enabled state to
-        // automatically depend on any selected tile layers.
-        AbstractTool::updateEnabledState();
+        AbstractTileTool::updateEnabledState();
+        return;
     }
+
     updateBrushVisibility();
 }
 

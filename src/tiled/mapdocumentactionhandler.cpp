@@ -24,19 +24,21 @@
 #include "actionmanager.h"
 #include "addremovelayer.h"
 #include "addremovemapobject.h"
+#include "changeevents.h"
 #include "changeselectedarea.h"
 #include "clipboardmanager.h"
 #include "documentmanager.h"
 #include "erasetiles.h"
 #include "grouplayer.h"
-#include "layermodel.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "mapobject.h"
+#include "mapobjectmodel.h"
 #include "maprenderer.h"
 #include "mapview.h"
 #include "movelayer.h"
 #include "objectgroup.h"
+#include "objectreferenceshelper.h"
 #include "tilelayer.h"
 #include "utils.h"
 
@@ -47,8 +49,6 @@
 #include <QMenu>
 #include <QtCore/qmath.h>
 #include <QStyle>
-
-#include "qtcompat_p.h"
 
 #include <algorithm>
 
@@ -298,8 +298,12 @@ void MapDocumentActionHandler::setMapDocument(MapDocument *mapDocument)
                 this, &MapDocumentActionHandler::updateActions);
         connect(mapDocument, &MapDocument::selectedObjectsChanged,
                 this, &MapDocumentActionHandler::updateActions);
-        connect(mapDocument, &MapDocument::mapChanged,
-                this, &MapDocumentActionHandler::updateActions);
+        connect(mapDocument, &MapDocument::changed,
+                this, [this] (const ChangeEvent &change) {
+            if (change.type == ChangeEvent::MapChanged)
+                if (static_cast<const MapChangeEvent&>(change).property == Map::InfiniteProperty)
+                    updateActions();
+        });
     }
 }
 
@@ -334,6 +338,43 @@ QMenu *MapDocumentActionHandler::createGroupLayerMenu(QWidget *parent) const
     return groupLayerMenu;
 }
 
+void MapDocumentActionHandler::populateMoveToLayerMenu(QMenu *menu, const ObjectGroup *current)
+{
+    if (!mMapDocument)
+        return;
+
+    const GroupLayer *parentLayer = nullptr;
+
+    LayerIterator objectGroupsIterator(mMapDocument->map(), Layer::ObjectGroupType);
+    objectGroupsIterator.toBack();
+
+    const auto objectGroupIcon = mMapDocument->mapObjectModel()->objectGroupIcon();
+
+    while (auto objectGroup = static_cast<ObjectGroup*>(objectGroupsIterator.previous())) {
+        // Create a separator to indicate the parent layer(s), using "(Parent1/Parent2)".
+        if (parentLayer != objectGroup->parentLayer()) {
+            auto separator = menu->addSeparator();
+            separator->setEnabled(false);
+
+            parentLayer = objectGroup->parentLayer();
+            if (parentLayer) {
+                QStringList parentLayerNames;
+                auto currentParentLayer = parentLayer;
+                while (currentParentLayer) {
+                    parentLayerNames.prepend(currentParentLayer->name());
+                    currentParentLayer = currentParentLayer->parentLayer();
+                }
+
+                separator->setText(parentLayerNames.join(QLatin1String("/")));
+            }
+        }
+
+        QAction *action = menu->addAction(objectGroupIcon, objectGroup->name());
+        action->setData(QVariant::fromValue(objectGroup));
+        action->setEnabled(objectGroup != current);
+    }
+}
+
 /**
  * Used to check whether we can cut or delete the current tile selection.
  */
@@ -361,6 +402,8 @@ void MapDocumentActionHandler::cut()
     QUndoStack *stack = mMapDocument->undoStack();
     stack->beginMacro(tr("Cut"));
     delete_();
+    if (!mMapDocument->selectedArea().isEmpty())
+        mMapDocument->undoStack()->push(new ChangeSelectedArea(mMapDocument, QRegion()));
     stack->endMacro();
 }
 
@@ -390,30 +433,21 @@ void MapDocumentActionHandler::delete_()
     const QList<Layer*> &selectedLayers = mMapDocument->selectedLayers();
     const QList<MapObject*> selectedObjects = mMapDocument->selectedObjectsOrdered();
 
-    bool tileLayerSelected = std::any_of(selectedLayers.begin(), selectedLayers.end(),
-                                         [] (Layer *layer) { return layer->isTileLayer(); });
-
     QList<QUndoCommand*> commands;
     QList<QPair<QRegion, TileLayer*>> erasedRegions;
 
-    if (tileLayerSelected) {
-        LayerIterator layerIterator(mMapDocument->map(), Layer::TileLayerType);
-        for (Layer *layer : selectedLayers) {
-            if (!layer->isTileLayer())
-                continue;
+    for (Layer *layer : selectedLayers) {
+        if (!layer->isTileLayer())
+            continue;
 
-            auto tileLayer = static_cast<TileLayer*>(layer);
-            const QRegion area = selectedArea.intersected(tileLayer->bounds());
-            if (area.isEmpty())                     // nothing to delete
-                continue;
+        auto tileLayer = static_cast<TileLayer*>(layer);
+        const QRegion area = selectedArea.intersected(tileLayer->bounds());
+        if (area.isEmpty())                     // nothing to delete
+            continue;
 
-            // Delete the selected part of the layer
-            commands.append(new EraseTiles(mMapDocument, tileLayer, area));
-            erasedRegions.append({ area, tileLayer });
-        }
-
-        if (!selectedArea.isEmpty())
-            commands.append(new ChangeSelectedArea(mMapDocument, QRegion()));
+        // Delete the selected part of the layer
+        commands.append(new EraseTiles(mMapDocument, tileLayer, area));
+        erasedRegions.append({ area, tileLayer });
     }
 
     if (!selectedObjects.isEmpty()) {
@@ -424,16 +458,25 @@ void MapDocumentActionHandler::delete_()
             commands.append(new RemoveMapObjects(mMapDocument, selectedObjects));
     }
 
-    if (!commands.isEmpty()) {
-        QUndoStack *undoStack = mMapDocument->undoStack();
+    QUndoStack *undoStack = mMapDocument->undoStack();
+    if (commands.size() == 1) {
+        commands.first()->setText(tr("Delete"));
+        undoStack->push(commands.first());
+    } else if (commands.size() > 1) {
         undoStack->beginMacro(tr("Delete"));
-        for (QUndoCommand *command : qAsConst(commands))
+        for (QUndoCommand *command : std::as_const(commands))
             undoStack->push(command);
         undoStack->endMacro();
     }
 
-    for (auto &erased : qAsConst(erasedRegions))
+    for (auto &erased : std::as_const(erasedRegions)) {
+        // Sanity check needed because a script might respond to the below
+        // signal by removing the layer from the map.
+        if (erased.second->map() != mMapDocument->map())
+            continue;
+
         emit mMapDocument->regionEdited(erased.first, erased.second);
+    }
 }
 
 void MapDocumentActionHandler::selectAll()
@@ -589,7 +632,8 @@ void MapDocumentActionHandler::layerVia(MapDocumentActionHandler::LayerViaVarian
     if (!mMapDocument)
         return;
 
-    auto *currentLayer = mMapDocument->currentLayer();
+    auto currentLayer = mMapDocument->currentLayer();
+    auto map = mMapDocument->map();
     Layer *newLayer = nullptr;
     QRegion selectedArea;
     TileLayer *sourceLayer = nullptr;
@@ -603,7 +647,6 @@ void MapDocumentActionHandler::layerVia(MapDocumentActionHandler::LayerViaVarian
         if (selectedArea.isEmpty())
             return;
 
-        auto map = mMapDocument->map();
         sourceLayer = static_cast<TileLayer*>(currentLayer);
         auto newTileLayer = new TileLayer(name, 0, 0, map->width(), map->height());
         newTileLayer->setCells(0, 0, sourceLayer, selectedArea);
@@ -621,13 +664,17 @@ void MapDocumentActionHandler::layerVia(MapDocumentActionHandler::LayerViaVarian
         newObjectGroup->setDrawOrder(currentObjectGroup->drawOrder());
         newObjectGroup->setColor(currentObjectGroup->color());
 
-        for (MapObject *mapObject : qAsConst(selectedObjects)) {
+        ObjectReferencesHelper objectRefs(map);
+
+        for (MapObject *mapObject : std::as_const(selectedObjects)) {
             MapObject *clone = mapObject->clone();
             if (variant == ViaCopy)
-                clone->resetId();
+                objectRefs.reassignId(clone);
             newObjects.append(clone);
             newObjectGroup->addObject(clone);
         }
+
+        objectRefs.rewire();
 
         newLayer = newObjectGroup;
         break;
@@ -647,8 +694,6 @@ void MapDocumentActionHandler::layerVia(MapDocumentActionHandler::LayerViaVarian
         undoStack->push(addLayer);
     } else {
         undoStack->beginMacro(name);
-        undoStack->push(addLayer);
-
         switch (currentLayer->layerType()) {
         case Layer::TileLayerType: {
             undoStack->push(new EraseTiles(mMapDocument, sourceLayer, selectedArea));
@@ -662,6 +707,7 @@ void MapDocumentActionHandler::layerVia(MapDocumentActionHandler::LayerViaVarian
             break;
         }
 
+        undoStack->push(addLayer);
         undoStack->endMacro();
     }
 

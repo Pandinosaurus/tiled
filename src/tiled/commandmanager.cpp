@@ -34,8 +34,6 @@
 #include <QLatin1String>
 #include <QMenu>
 
-#include "qtcompat_p.h"
-
 namespace Tiled {
 
 CommandManager::CommandManager()
@@ -111,7 +109,7 @@ const QVector<Command> &CommandManager::globalCommands() const
 
 const QVector<Command> &CommandManager::projectCommands() const
 {
-    auto &project = ProjectManager::instance()->project();
+    const auto &project = ProjectManager::instance()->project();
     return project.mCommands;
 }
 
@@ -149,7 +147,7 @@ void CommandManager::showDialog()
 void CommandManager::commit()
 {
     QVariantList commands;
-    for (const Command &command : qAsConst(mCommands))
+    for (const Command &command : std::as_const(mCommands))
         commands.append(command.toVariant());
 
     Preferences::instance()->setValue(QLatin1String("commandList"), commands);
@@ -177,7 +175,7 @@ void CommandManager::updateActions()
     };
 
     // Add global commands
-    for (const Command &command : qAsConst(mCommands))
+    for (const Command &command : std::as_const(mCommands))
         addAction(command);
 
     addSeparator();

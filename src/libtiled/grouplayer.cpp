@@ -22,8 +22,6 @@
 
 #include "map.h"
 
-#include "qtcompat_p.h"
-
 namespace Tiled {
 
 GroupLayer::GroupLayer(const QString &name, int x, int y):
@@ -120,10 +118,10 @@ void GroupLayer::setMap(Map *map)
     Layer::setMap(map);
 
     if (map) {
-        for (Layer *layer : qAsConst(mLayers))
+        for (Layer *layer : std::as_const(mLayers))
             map->adoptLayer(*layer);
     } else {
-        for (Layer *layer : qAsConst(mLayers))
+        for (Layer *layer : std::as_const(mLayers))
             layer->setMap(nullptr);
     }
 }

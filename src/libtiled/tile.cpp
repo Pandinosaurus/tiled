@@ -31,6 +31,8 @@
 #include "objectgroup.h"
 #include "tileset.h"
 
+#include <QBitmap>
+
 using namespace Tiled;
 
 Tile::Tile(int id, Tileset *tileset):
@@ -63,7 +65,64 @@ Tile::~Tile()
  */
 QSharedPointer<Tileset> Tile::sharedTileset() const
 {
-    return mTileset->sharedPointer();
+    return mTileset->sharedFromThis();
+}
+
+/**
+ * Returns the image of this tile, or the image of its tileset if it doesn't
+ * have an individual one.
+ */
+const QPixmap &Tile::image() const
+{
+    return mImage.isNull() ? mTileset->image() : mImage;
+}
+
+// Using some internal Qt API here, but this is the function that is also used
+// by QGraphicsPixmapItem, so my assumption is that it is better suited for
+// this task than using QPainterPath::addRegion.
+extern QPainterPath qt_regionToPath(const QRegion &region);
+
+const QPainterPath &Tile::imageShape() const
+{
+    if (!mImageShape.has_value()) {
+#if 1
+        const QBitmap mask = image().mask();
+        if (mask.isNull()) {
+            // Can happen when the image has no alpha channel, in which case we
+            // want to be able to select the entire image.
+            mImageShape = QPainterPath();
+            mImageShape->addRect(image().rect());
+        } else {
+            mImageShape = qt_regionToPath(mask);
+        }
+#else
+        // Public Qt API alternative, which generally produces more
+        // heavy-weight paths since it just uses rectangles.
+        mImageShape.emplace().addRegion(mImage.mask());
+#endif
+
+        if (mImageRect != image().rect()) {
+            QPainterPath rect;
+            rect.addRect(mImageRect);
+            *mImageShape &= rect;
+            mImageShape->translate(-mImageRect.topLeft());
+        }
+    }
+    return *mImageShape;
+}
+
+/**
+ * Sets the image of this tile.
+ */
+void Tile::setImage(const QPixmap &image)
+{
+    // Initialize or auto-adjust the image rect
+    if (mImageRect.isNull() || mImageRect == mImage.rect())
+        mImageRect = image.rect();
+
+    mImage = image;
+    mImageStatus = image.isNull() ? LoadingError : LoadingReady;
+    mImageShape.reset();
 }
 
 /**
@@ -79,6 +138,15 @@ const Tile *Tile::currentFrameTile() const
         return mTileset->findTile(frame.tileId);
     }
     return this;
+}
+
+void Tile::setImageRect(const QRect &imageRect)
+{
+    if (mImageRect == imageRect)
+        return;
+
+    mImageRect = imageRect;
+    mImageShape.reset();
 }
 
 /**
@@ -172,11 +240,12 @@ bool Tile::advanceAnimation(int ms)
 Tile *Tile::clone(Tileset *tileset) const
 {
     Tile *c = new Tile(mImage, mId, tileset);
+    c->setClassName(className());
     c->setProperties(properties());
 
     c->mImageSource = mImageSource;
+    c->mImageRect = mImageRect;
     c->mImageStatus = mImageStatus;
-    c->mType = mType;
     c->mProbability = mProbability;
 
     if (mObjectGroup)

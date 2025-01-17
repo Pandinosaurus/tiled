@@ -1,6 +1,7 @@
 /*
  * automappingmanager.h
- * Copyright 2010-2011, Stefan Beller, stefanbeller@googlemail.com
+ * Copyright 2010-2012, Stefan Beller <stefanbeller@googlemail.com>
+ * Copyright 2013-2022, Thorbjørn Lindeijer <bjorn@lindeijer.nl>
  *
  * This file is part of Tiled.
  *
@@ -22,17 +23,18 @@
 
 #include "session.h"
 
+#include <QFileSystemWatcher>
 #include <QObject>
 #include <QRegion>
+#include <QRegularExpression>
 #include <QString>
-#include <QFileSystemWatcher>
 
 #include <memory>
 #include <vector>
 
 namespace Tiled {
 
-class Layer;
+class TileLayer;
 
 class AutoMapper;
 class MapDocument;
@@ -78,21 +80,13 @@ signals:
     void warningsOccurred(bool automatic);
 
 private:
-    void onRegionEdited(const QRegion &where, Layer *touchedLayer);
+    void onRegionEdited(const QRegion &where, TileLayer *touchedLayer);
     void onMapFileNameChanged();
     void onFileChanged();
 
-    /**
-     * This function parses a rules file.
-     * For each path which is a rule, (file extension is tmx) an AutoMapper
-     * object is setup.
-     *
-     * If a file extension is txt, this file will be opened and searched for
-     * rules again.
-     *
-     * @return if the loading was successful: return true if it succeeded.
-     */
     bool loadFile(const QString &filePath);
+    bool loadRulesFile(const QString &filePath);
+    bool loadRuleMap(const QString &filePath);
 
     /**
      * Applies automapping to the region \a where.
@@ -100,7 +94,7 @@ private:
      * If a \a touchedLayer is given, only those AutoMappers will be used which
      * have a rule layer matching the \a touchedLayer.
      */
-    void autoMapInternal(const QRegion &where, const Layer *touchedLayer);
+    void autoMapInternal(const QRegion &where, const TileLayer *touchedLayer);
 
     /**
      * deletes all its data structures
@@ -139,6 +133,7 @@ private:
     QFileSystemWatcher mWatcher;
 
     QString mRulesFile;
+    QRegularExpression mMapNameFilter;
     bool mRulesFileOverride = false;
 };
 

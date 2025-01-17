@@ -20,8 +20,9 @@
 
 #include "tiledapplication.h"
 
-#include "documentmanager.h"
 #include "languagemanager.h"
+#include "newsfeed.h"
+#include "newversionchecker.h"
 #include "pluginmanager.h"
 #include "preferences.h"
 #include "scriptmanager.h"
@@ -66,9 +67,23 @@ TiledApplication::~TiledApplication()
     Session::deinitialize();
 }
 
+NewVersionChecker &TiledApplication::newVersionChecker()
+{
+    if (!mNewVersionChecker)
+        mNewVersionChecker = new NewVersionChecker(this);
+    return *mNewVersionChecker;
+}
+
+NewsFeed &TiledApplication::newsFeed()
+{
+    if (!mNewsFeed)
+        mNewsFeed = std::make_unique<NewsFeed>();
+    return *mNewsFeed;
+}
+
 bool TiledApplication::event(QEvent *event)
 {
-    // Handle the QFileOpenEvent to open files on MacOS X.
+    // Handle the QFileOpenEvent to open files on macOS.
     if (event->type() == QEvent::FileOpen) {
         QFileOpenEvent *fileOpenEvent = static_cast<QFileOpenEvent*>(event);
         emit fileOpenRequest(fileOpenEvent->file());

@@ -28,7 +28,6 @@ class MapObject;
 class MapRenderer;
 
 class ArrowHead;
-class ObjectSelectionItem;
 
 class ObjectReferenceItem : public QGraphicsItem
 {
@@ -38,12 +37,10 @@ public:
 
     ObjectReferenceItem(MapObject *source,
                         MapObject *target,
-                        const QString &property,
                         QGraphicsItem *parent = nullptr);
 
     MapObject *sourceObject() const { return mSourceObject; }
     MapObject *targetObject() const { return mTargetObject; }
-    QString property() const { return mProperty; }
 
     void setSourceObject(MapObject *sourceObject) { mSourceObject = sourceObject; }
     void setTargetPos(const QPointF &pos);
@@ -69,7 +66,6 @@ private:
     MapObject *mSourceObject;
     MapObject *mTargetObject;
     ArrowHead *mArrowHead;
-    QString mProperty;
     QColor mColor;
 };
 

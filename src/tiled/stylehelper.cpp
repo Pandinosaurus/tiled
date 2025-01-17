@@ -27,6 +27,7 @@
 #include <QPixmapCache>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QStyleHints>
 
 namespace Tiled {
 
@@ -72,9 +73,7 @@ static QPalette createPalette(const QColor &windowColor,
     bool highlightIsDark = qGray(highlightColor.rgb()) < 120;
     palette.setColor(QPalette::Highlight, highlightColor);
     palette.setColor(QPalette::HighlightedText, highlightIsDark ? Qt::white : Qt::black);
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
     palette.setColor(QPalette::PlaceholderText, disabledText);
-#endif
 
     if (!isLight) {
         const QColor lightskyblue { 0x87, 0xce, 0xfa };
@@ -94,13 +93,16 @@ void StyleHelper::initialize()
 StyleHelper::StyleHelper()
     : mDefaultStyle(QApplication::style()->objectName())
     , mDefaultPalette(QApplication::palette())
+    , mDefaultShowShortcutsInContextMenus(QGuiApplication::styleHints()->showShortcutsInContextMenus())
 {
     apply();
+    applyFont();
 
     Preferences *preferences = Preferences::instance();
     QObject::connect(preferences, &Preferences::applicationStyleChanged, this, &StyleHelper::apply);
     QObject::connect(preferences, &Preferences::baseColorChanged, this, &StyleHelper::apply);
     QObject::connect(preferences, &Preferences::selectionColorChanged, this, &StyleHelper::apply);
+    QObject::connect(preferences, &Preferences::applicationFontChanged, this, &StyleHelper::applyFont);
 }
 
 void StyleHelper::apply()
@@ -109,12 +111,14 @@ void StyleHelper::apply()
 
     QString desiredStyle;
     QPalette desiredPalette;
+    bool showShortcutsInContextMenus = true;
 
     switch (preferences->applicationStyle()) {
     default:
     case Preferences::SystemDefaultStyle:
         desiredStyle = defaultStyle();
         desiredPalette = defaultPalette();
+        showShortcutsInContextMenus = mDefaultShowShortcutsInContextMenus;
         break;
     case Preferences::FusionStyle:
         desiredStyle = QLatin1String("fusion");
@@ -127,6 +131,8 @@ void StyleHelper::apply()
                                        preferences->selectionColor());
         break;
     }
+
+    QGuiApplication::styleHints()->setShowShortcutsInContextMenus(showShortcutsInContextMenus);
 
     if (QApplication::style()->objectName() != desiredStyle) {
         QStyle *style;
@@ -150,6 +156,21 @@ void StyleHelper::apply()
     }
 
     emit styleApplied();
+}
+
+void StyleHelper::applyFont()
+{
+    Preferences *prefs = Preferences::instance();
+
+    if (prefs->useCustomFont()) {
+        if (!mDefaultFont.has_value())
+            mDefaultFont = QApplication::font();
+
+        QApplication::setFont(prefs->customFont());
+
+    } else if (mDefaultFont.has_value()) {
+        QApplication::setFont(*mDefaultFont);
+    }
 }
 
 } // namespace Tiled

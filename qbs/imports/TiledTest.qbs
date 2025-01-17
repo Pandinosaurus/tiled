@@ -1,4 +1,3 @@
-import qbs
 import qbs.FileInfo
 
 CppApplication {
@@ -8,7 +7,15 @@ CppApplication {
     Depends { name: "Qt.testlib" }
     Depends { name: "autotest" }
 
-    cpp.cxxLanguageVersion: "c++14"
-    cpp.rpaths: FileInfo.joinPaths(cpp.rpathOrigin, "../install-root/usr/local/lib/")
+    cpp.cxxLanguageVersion: "c++17"
+    cpp.cxxFlags: {
+        var flags = base;
+        if (qbs.toolchain.contains("msvc")) {
+            if (Qt.core.versionMajor >= 6 && Qt.core.versionMinor >= 3)
+                flags.push("/permissive-");
+        }
+        return flags;
+    }
+    cpp.rpaths: FileInfo.joinPaths(cpp.rpathOrigin, "../install-root/usr/local", project.libDir)
     autotest.workingDir: sourceDirectory
 }

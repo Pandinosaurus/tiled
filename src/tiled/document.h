@@ -56,7 +56,8 @@ public:
     enum DocumentType {
         MapDocumentType,
         TilesetDocumentType,
-        WorldDocumentType
+        WorldDocumentType,
+        ProjectDocumentType
     };
 
     Document(DocumentType type,
@@ -66,8 +67,8 @@ public:
 
     DocumentType type() const { return mType; }
 
-    QString fileName() const;
-    QString canonicalFilePath() const;
+    const QString &fileName() const;
+    const QString &canonicalFilePath() const;
 
     /**
      * Returns the name with which to display this document. It is the file name
@@ -87,6 +88,8 @@ public:
      */
     virtual bool save(const QString &fileName, QString *error = nullptr) = 0;
 
+    virtual bool canReload() const { return false; }
+
     virtual FileFormat *writerFormat() const = 0;
 
     QDateTime lastSaved() const { return mLastSaved; }
@@ -94,7 +97,8 @@ public:
     QUndoStack *undoStack() const;
     bool isModified() const;
 
-    Q_INVOKABLE virtual Tiled::EditableAsset *editable() = 0;
+    EditableAsset *editable();
+    void setEditable(std::unique_ptr<EditableAsset> editable);
 
     Object *currentObject() const { return mCurrentObject; }
     void setCurrentObject(Object *object);
@@ -103,6 +107,7 @@ public:
     virtual QList<Object*> currentObjects() const;
 
     void setProperty(Object *object, const QString &name, const QVariant &value);
+    void setPropertyMember(Object *object, const QStringList &path, const QVariant &value);
     void setProperties(Object *object, const Properties &properties);
     void removeProperty(Object *object, const QString &name);
 
@@ -112,6 +117,9 @@ public:
     bool changedOnDisk() const;
     void setChangedOnDisk(bool changedOnDisk);
 
+    bool isReadOnly() const;
+    void setReadOnly(bool readOnly);
+
     virtual QString lastExportFileName() const = 0;
     virtual void setLastExportFileName(const QString &fileName) = 0;
 
@@ -120,8 +128,6 @@ public:
 
     virtual void checkIssues() {}
 
-    static const QHash<QString, Document *> &documentInstances();
-
 signals:
     void changed(const ChangeEvent &change);
     void saved();
@@ -129,9 +135,11 @@ signals:
     void fileNameChanged(const QString &fileName,
                          const QString &oldFileName);
     void modifiedChanged();
+    void isReadOnlyChanged(bool readOnly);
 
     void currentObjectSet(Object *object);
     void currentObjectChanged(Object *object);
+    void currentObjectsChanged();
 
     /**
      * Makes the Properties window visible and take focus.
@@ -146,6 +154,11 @@ signals:
     void ignoreBrokenLinksChanged(bool ignoreBrokenLinks);
 
 protected:
+    virtual std::unique_ptr<EditableAsset> createEditable() = 0;
+    virtual bool isModifiedImpl() const;
+
+    void updateIsModified();
+
     void setFileName(const QString &fileName);
 
     void checkFilePathProperties(const Object *object) const;
@@ -161,8 +174,6 @@ private:
     void currentObjectDocumentChanged(const ChangeEvent &change);
     void currentObjectDocumentDestroyed();
 
-    void updateModifiedChanged();
-
     const DocumentType mType;
 
     QString mFileName;
@@ -170,20 +181,19 @@ private:
 
     QUndoStack * const mUndoStack;
 
+    bool mReadOnly = false;
     bool mModified = false;
     bool mChangedOnDisk = false;
     bool mIgnoreBrokenLinks = false;
-
-    static QHash<QString, Document*> sDocumentInstances;
 };
 
 
-inline QString Document::fileName() const
+inline const QString &Document::fileName() const
 {
     return mFileName;
 }
 
-inline QString Document::canonicalFilePath() const
+inline const QString &Document::canonicalFilePath() const
 {
     return mCanonicalFilePath;
 }
@@ -227,9 +237,9 @@ inline bool Document::changedOnDisk() const
     return mChangedOnDisk;
 }
 
-inline const QHash<QString, Document *> &Document::documentInstances()
+inline bool Document::isReadOnly() const
 {
-    return sDocumentInstances;
+    return mReadOnly;
 }
 
 using DocumentPtr = QSharedPointer<Document>;

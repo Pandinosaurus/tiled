@@ -21,6 +21,7 @@
 #pragma once
 
 #include <QColor>
+#include <QColorDialog>
 #include <QToolButton>
 
 namespace Tiled {
@@ -33,11 +34,16 @@ class ColorButton : public QToolButton
 {
     Q_OBJECT
 
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+
 public:
     ColorButton(QWidget *parent = nullptr);
 
     QColor color() const { return mColor; }
     void setColor(const QColor &color);
+
+    void setShowAlphaChannel(bool enabled)
+    { mDialogOptions.setFlag(QColorDialog::ShowAlphaChannel, enabled); }
 
 signals:
     void colorChanged(const QColor &color);
@@ -50,6 +56,7 @@ private:
     void updateIcon();
 
     QColor mColor;
+    QColorDialog::ColorDialogOptions mDialogOptions;
 };
 
 } // namespace Tiled

@@ -28,9 +28,7 @@
 #include <QToolButton>
 
 class QAbstractProxyModel;
-class QLabel;
 class QModelIndex;
-class QUndoStack;
 
 namespace Tiled {
 
@@ -58,20 +56,13 @@ protected:
     void changeEvent(QEvent *e) override;
 
 private:
-    void updateOpacitySlider();
-    void documentChanged(const ChangeEvent &change);
     void editLayerName();
-    void sliderValueChanged(int opacity);
 
     void retranslateUi();
 
-    QLabel *mOpacityLabel;
-    QSlider *mOpacitySlider;
     QToolButton *mNewLayerButton;
     LayerView *mLayerView;
     MapDocument *mMapDocument = nullptr;
-    bool mUpdatingSlider = false;
-    bool mChangingLayerOpacity = false;
 };
 
 /**
@@ -97,9 +88,18 @@ protected:
     void selectionChanged(const QItemSelection &selected,
                           const QItemSelection &deselected) override;
 
+    QItemSelectionModel::SelectionFlags selectionCommand(const QModelIndex &index,
+                                                         const QEvent *event = nullptr) const override;
+
 private:
+    void onExpanded(const QModelIndex &index);
+    void onCollapsed(const QModelIndex &index);
+    void restoreExpandedLayers();
+
     void currentRowChanged(const QModelIndex &proxyIndex);
     void indexPressed(const QModelIndex &proxyIndex);
+
+    void documentChanged(const ChangeEvent &event);
     void currentLayerChanged(Layer *layer);
     void selectedLayersChanged();
     void layerRemoved(Layer *layer);

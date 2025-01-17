@@ -22,29 +22,44 @@
 #pragma once
 
 #include "document.h"
+#include "editableasset.h"
 
 class WorldManager;
 
 namespace Tiled {
 
+class World;
+
+class WorldDocument;
+
+using WorldDocumentPtr = QSharedPointer<WorldDocument>;
+
 /**
  * Represents an editable world document.
  */
-class WorldDocument : public Document
+class WorldDocument final : public Document
 {
     Q_OBJECT
 
 public:
-    WorldDocument(const QString &fileName, QObject *parent = nullptr);
+    explicit WorldDocument(std::unique_ptr<World> world, QObject *parent = nullptr);
+    ~WorldDocument();
 
     // Document interface
     QString displayName() const override;
     bool save(const QString &fileName, QString *error) override;
 
-    FileFormat *writerFormat() const override { return nullptr; }
+    bool canReload() const override;
+    bool reload(QString *error);
 
-    // TODO: Expose worlds in script API
-    EditableAsset *editable() override { return nullptr; }
+    /**
+     * Loads a world and returns a WorldDocument instance on success. Returns
+     * null on error and sets the \a error message.
+     */
+    static WorldDocumentPtr load(const QString &fileName,
+                                 QString *error = nullptr);
+
+    FileFormat *writerFormat() const override { return nullptr; }
 
     // Exporting not supported for worlds
     QString lastExportFileName() const override { return QString(); }
@@ -52,8 +67,18 @@ public:
     FileFormat *exportFormat() const override { return nullptr; }
     void setExportFormat(FileFormat *) override {}
 
+    World *world() const { return mWorld.get(); }
+
+    void swapWorld(std::unique_ptr<World> &other);
+
+signals:
+    void worldChanged();
+
 private:
-    void onWorldReloaded(const QString &filename);
+    // Document interface
+    std::unique_ptr<EditableAsset> createEditable() override;
+
+    std::unique_ptr<World> mWorld;
 };
 
 } // namespace Tiled

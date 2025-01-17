@@ -24,6 +24,8 @@
 
 #include <QUndoCommand>
 
+#include <memory>
+
 namespace Tiled {
 
 class GroupLayer;
@@ -48,7 +50,7 @@ protected:
     void removeLayer();
 
     MapDocument *mMapDocument;
-    Layer *mLayer;
+    std::unique_ptr<Layer> mLayer;
     GroupLayer *mParentLayer;
     int mIndex;
 };
@@ -67,11 +69,8 @@ public:
              int index, Layer *layer, GroupLayer *parentLayer,
              QUndoCommand *parent = nullptr);
 
-    void undo() override
-    { removeLayer(); }
-
-    void redo() override
-    { addLayer(); }
+    void undo() override;
+    void redo() override;
 
     AddLayer *clone(QUndoCommand *parent = nullptr) const override;
 };
@@ -89,11 +88,8 @@ public:
                 int index, GroupLayer *parentLayer,
                 QUndoCommand *parent = nullptr);
 
-    void undo() override
-    { addLayer(); }
-
-    void redo() override
-    { removeLayer(); }
+    void undo() override;
+    void redo() override;
 };
 
 } // namespace Tiled

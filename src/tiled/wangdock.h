@@ -61,6 +61,7 @@ public:
 
     WangSet *currentWangSet() const { return mCurrentWangSet; }
     WangId currentWangId() const { return mCurrentWangId; }
+    int currentWangColor() const;
 
     void editWangSetName(WangSet *wangSet);
     void editWangColorName(int colorIndex);
@@ -87,7 +88,7 @@ public slots:
     void setCurrentWangSet(WangSet *wangSet);
     void onCurrentWangIdChanged(WangId wangId);
     void onWangIdUsedChanged(WangId wangId);
-    void onColorCaptured(int color);
+    void setCurrentWangColor(int color);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -99,7 +100,7 @@ private:
     void refreshCurrentWangColor();
     void wangColorIndexPressed(const QModelIndex &index);
     void documentChanged(const ChangeEvent &change);
-    void wangSetChanged();
+    void wangSetChanged(WangSet *wangSet);
     void wangSetIndexPressed(const QModelIndex &index);
     void expandRows(const QModelIndex &parent, int first, int last);
     void checkAnyWangSets();

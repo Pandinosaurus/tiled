@@ -23,6 +23,8 @@
 #include <QDialog>
 #include <QModelIndex>
 
+class QAbstractItemView;
+
 namespace Ui {
 class TileAnimationEditor;
 }
@@ -62,8 +64,11 @@ protected:
 
 private:
     void framesEdited();
+    void tilesetChanged();
     void tileAnimationChanged(Tile *tile);
     void currentObjectChanged(Object *object);
+
+    void showFrameListContextMenu(const QPoint &pos);
 
     void addFrameForTileAt(const QModelIndex &index);
 
@@ -71,7 +76,13 @@ private:
     void setDefaultFrameTime(int duration);
     void undo();
     void redo();
-    void delete_();
+
+    void cutFrames();
+    void copyFrames();
+    void copyTiles();
+    void copy(QAbstractItemView *view);
+    void pasteFrames();
+    void deleteFrames();
 
     void advancePreviewAnimation(int ms);
     void resetPreview();

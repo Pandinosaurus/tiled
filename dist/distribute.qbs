@@ -3,7 +3,6 @@
   shipped when Tiled is distributed.
 */
 
-import qbs
 import qbs.File
 import qbs.FileInfo
 
@@ -44,12 +43,7 @@ Product {
                 return Qt.core.libPath + "/lib"
             }
         }
-        property string postfix: {
-            var suffix = "";
-            if (qbs.targetOS.contains("windows") && qbs.debugInformation && Qt.core.versionMajor < 6 && Qt.core.versionMinor < 15)
-                suffix += "d";
-            return suffix + cpp.dynamicLibrarySuffix;
-        }
+        property string postfix: cpp.dynamicLibrarySuffix
         files: {
             function addQtVersions(libs) {
                 var result = [];
@@ -72,6 +66,7 @@ Product {
             if (!Qt.core.frameworkBuild) {
                 var major = Qt.core.versionMajor;
                 list.push(
+                    "Qt" + major + "Concurrent" + postfix,
                     "Qt" + major + "Core" + postfix,
                     "Qt" + major + "Gui" + postfix,
                     "Qt" + major + "Network" + postfix,
@@ -80,7 +75,7 @@ Product {
                     "Qt" + major + "Widgets" + postfix
                 );
 
-                if (Qt.core.versionMajor >= 6) {
+                if (major >= 6) {
                     list.push(
                         "Qt" + major + "OpenGL" + postfix,
                         "Qt" + major + "OpenGLWidgets" + postfix
@@ -88,15 +83,7 @@ Product {
                 }
             }
 
-            if (qbs.targetOS.contains("windows")) {
-                if (Qt.core.versionMajor < 6 && Qt.core.versionMinor < 7 &&
-                        !(Qt.core.versionMinor == 6 &&
-                          Qt.core.versionPatch >= 3)) {
-                    list.push("icuin54.dll",
-                              "icuuc54.dll",
-                              "icudt54.dll");
-                }
-            } else if (qbs.targetOS.contains("linux")) {
+            if (qbs.targetOS.contains("linux")) {
                 list = addQtVersions(list);
                 list = list.concat(addQtVersions([
                     "Qt" + major + "DBus.so",
@@ -113,7 +100,7 @@ Product {
             return list;
         }
         qbs.install: true
-        qbs.installDir: qbs.targetOS.contains("windows") ? "" : "lib"
+        qbs.installDir: qbs.targetOS.contains("windows") ? "" : project.libDir
     }
 
     property var pluginFiles: {
@@ -194,6 +181,27 @@ Product {
         excludeFiles: pluginExcludeFiles
         qbs.install: true
         qbs.installDir: "plugins/styles"
+    }
+
+    Group {
+        name: "Qt TLS Plugins"
+        condition: Qt.core.versionMajor >= 6 && Qt.core.versionMinor >= 2;
+        prefix: FileInfo.joinPaths(Qt.core.pluginPath, "/tls/")
+        files: {
+            if (qbs.targetOS.contains("windows")) {
+                if (qbs.debugInformation)
+                    return ["qschannelbackendd.dll"];
+                else
+                    return ["qschannelbackend.dll"];
+            } else if (qbs.targetOS.contains("macos")) {
+                return ["libqsecuretransportbackend.dylib"];
+            }
+
+            return pluginFiles;
+        }
+        excludeFiles: pluginExcludeFiles
+        qbs.install: true
+        qbs.installDir: "plugins/tls"
     }
 
     Group {
@@ -303,37 +311,27 @@ Product {
 
     Group {
         name: "OpenSSL DLLs"
-        condition: qbs.targetOS.contains("windows") && File.exists(prefix)
+        condition: {
+            return qbs.targetOS.contains("windows") &&
+                    !(Qt.core.versionMajor >= 6 && Qt.core.versionMinor >= 2) &&
+                    File.exists(prefix)
+        }
 
         prefix: {
             if (project.openSslPath) {
                 return project.openSslPath + "/";
             } else {
-                // Not sure what this check should be exactly, but Qt 5.6.3 was
-                // built against OpenSSL 1.0.2 whereas Qt 5.12.5 was built against
-                // OpenSSL 1.1.1.
-                if (Qt.core.versionMinor >= 12 || Qt.core.versionMajor >= 6) {
-                    if (qbs.architecture === "x86_64")
-                        return "C:/OpenSSL-v111-Win64/"
-                    else
-                        return "C:/OpenSSL-v111-Win32/"
-                } else {
-                    if (qbs.architecture === "x86_64")
-                        return "C:/OpenSSL-Win64/"
-                    else
-                        return "C:/OpenSSL-Win32/"
-                }
+                if (qbs.architecture === "x86_64")
+                    return "C:/OpenSSL-v111-Win64/"
+                else
+                    return "C:/OpenSSL-v111-Win32/"
             }
         }
         files: {
-            if (Qt.core.versionMinor >= 12 || Qt.core.versionMajor >= 6) {
-                if (qbs.architecture === "x86_64")
-                    return [ "libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll" ]
-                else
-                    return [ "libcrypto-1_1.dll", "libssl-1_1.dll" ]
-            } else {
-                return [ "libeay32.dll", "ssleay32.dll" ]
-            }
+            if (qbs.architecture === "x86_64")
+                return [ "libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll" ]
+            else
+                return [ "libcrypto-1_1.dll", "libssl-1_1.dll" ]
         }
         qbs.install: true
         qbs.installDir: ""

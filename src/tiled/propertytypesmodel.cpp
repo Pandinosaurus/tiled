@@ -1,6 +1,6 @@
 /*
  * propertytypesmodel.cpp
- * Copyright 2011, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
+ * Copyright 2011-2022, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
  *
  * This file is part of Tiled.
  *
@@ -22,6 +22,9 @@
 
 #include "containerhelpers.h"
 
+#include <QMessageBox>
+#include <QWidget>
+
 using namespace Tiled;
 
 static bool propertyTypeLessThan(const PropertyType *a, const PropertyType *b)
@@ -29,8 +32,9 @@ static bool propertyTypeLessThan(const PropertyType *a, const PropertyType *b)
     return QString::localeAwareCompare(a->name, b->name) < 0;
 }
 
-PropertyTypesModel::PropertyTypesModel(QObject *parent)
+PropertyTypesModel::PropertyTypesModel(QWidget *parent)
     : QAbstractListModel(parent)
+    , mParentWidget(parent)
 {
 }
 
@@ -80,8 +84,8 @@ bool PropertyTypesModel::setData(const QModelIndex &index,
                                  int role)
 {
     if (role == Qt::EditRole && index.column() == 0) {
-        setPropertyTypeName(index.row(), value.toString());
-        return true;
+        if (setPropertyTypeName(index.row(), value.toString()))
+            return true;
     }
     return false;
 }
@@ -94,9 +98,16 @@ Qt::ItemFlags PropertyTypesModel::flags(const QModelIndex &index) const
     return f;
 }
 
-void PropertyTypesModel::setPropertyTypeName(int row, const QString &name)
+bool PropertyTypesModel::setPropertyTypeName(int row, const QString &name)
 {
     auto &propertyTypes = *mPropertyTypes;
+    auto &propertyType = propertyTypes.typeAt(row);
+
+    if (propertyType.name == name)
+        return true;
+
+    if (!checkTypeNameUnused(name))
+        return false;
 
     const std::unique_ptr<PropertyType> typeWithName = std::make_unique<EnumPropertyType>(name.trimmed());
     auto nextPropertyType = std::lower_bound(propertyTypes.begin(),
@@ -108,7 +119,7 @@ void PropertyTypesModel::setPropertyTypeName(int row, const QString &name)
     // QVector::move works differently from beginMoveRows
     const int moveToRow = newRow > row ? newRow - 1 : newRow;
 
-    propertyTypes.typeAt(row).name = typeWithName->name;
+    propertyType.name = typeWithName->name;
     const auto index = this->index(row);
     emit nameChanged(index, propertyTypes.typeAt(row));
     emit dataChanged(index, index, { Qt::DisplayRole, Qt::EditRole });
@@ -120,6 +131,8 @@ void PropertyTypesModel::setPropertyTypeName(int row, const QString &name)
         propertyTypes.moveType(row, moveToRow);
         endMoveRows();
     }
+
+    return true;
 }
 
 void PropertyTypesModel::removePropertyTypes(const QModelIndexList &indexes)
@@ -157,16 +170,32 @@ QModelIndex PropertyTypesModel::addNewPropertyType(PropertyType::Type type)
     if (!propertyType)
         return QModelIndex();
 
+    return addPropertyType(std::move(propertyType));
+}
+
+QModelIndex PropertyTypesModel::addPropertyType(std::unique_ptr<PropertyType> type)
+{
     const int row = mPropertyTypes->count();
 
     beginInsertRows(QModelIndex(), row, row);
-
-    propertyType->id = ++PropertyType::nextId;
-    mPropertyTypes->add(std::move(propertyType));
-
+    mPropertyTypes->add(std::move(type));
     endInsertRows();
 
     return index(row, 0);
+}
+
+void PropertyTypesModel::importPropertyTypes(PropertyTypes typesToImport)
+{
+    beginResetModel();
+    mPropertyTypes->merge(std::move(typesToImport));
+    endResetModel();
+}
+
+void PropertyTypesModel::importObjectTypes(const QVector<ObjectType> &objectTypes)
+{
+    beginResetModel();
+    mPropertyTypes->mergeObjectTypes(objectTypes);
+    endResetModel();
 }
 
 QIcon PropertyTypesModel::iconForPropertyType(PropertyType::Type type)
@@ -184,6 +213,17 @@ QIcon PropertyTypesModel::iconForPropertyType(PropertyType::Type type)
     }
     }
     return QIcon();
+}
+
+bool PropertyTypesModel::checkTypeNameUnused(const QString &name) const
+{
+    if (mPropertyTypes->findTypeByName(name)) {
+        QMessageBox::critical(mParentWidget,
+                              tr("Error Renaming Type"),
+                              tr("The name '%1' is already in use.").arg(name));
+        return false;
+    }
+    return true;
 }
 
 QString PropertyTypesModel::nextPropertyTypeName(PropertyType::Type type) const

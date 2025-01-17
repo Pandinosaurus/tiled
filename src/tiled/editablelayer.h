@@ -52,6 +52,15 @@ class EditableLayer : public EditableObject
     Q_PROPERTY(bool isImageLayer READ isImageLayer CONSTANT)
 
 public:
+    // Synchronized with Layer::LayerType
+    enum TypeFlag {
+        TileLayerType   = 0x01,
+        ObjectGroupType = 0x02,
+        ImageLayerType  = 0x04,
+        GroupLayerType  = 0x08
+    };
+    Q_ENUM(TypeFlag)
+
     explicit EditableLayer(std::unique_ptr<Layer> layer,
                            QObject *parent = nullptr);
 
@@ -79,10 +88,13 @@ public:
     Layer *layer() const;
 
     void detach();
-    void attach(EditableAsset *asset);
-    void hold();
-    Layer *release();
+    Layer *attach(EditableAsset *asset);
+    void hold(std::unique_ptr<Layer> layer);
     bool isOwning() const;
+
+    static EditableLayer *find(Layer *layer);
+    static EditableLayer *get(EditableMap *map, Layer *layer);
+    static void release(Layer *layer);
 
 public slots:
     void setName(const QString &name);
@@ -119,7 +131,8 @@ inline qreal EditableLayer::opacity() const
 
 inline QColor EditableLayer::tintColor() const
 {
-    return layer()->tintColor();
+    return layer()->tintColor().isValid() ? layer()->tintColor()
+                                          : QColor(255, 255, 255, 255);
 }
 
 inline bool EditableLayer::isVisible() const
@@ -172,6 +185,9 @@ inline bool EditableLayer::isOwning() const
     return mDetachedLayer.get() == layer();
 }
 
-} // namespace Tiled
+inline EditableLayer *EditableLayer::find(Layer *layer)
+{
+    return static_cast<EditableLayer*>(EditableObject::find(layer));
+}
 
-Q_DECLARE_METATYPE(Tiled::EditableLayer*)
+} // namespace Tiled

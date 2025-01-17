@@ -35,8 +35,6 @@
 #include <QStyledItemDelegate>
 #include <QVBoxLayout>
 
-#include <memory>
-
 namespace Tiled {
 
 class IssueFilterModel : public QSortFilterProxyModel
@@ -51,6 +49,9 @@ public:
         if (mShowWarnings == showWarnings)
             return;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+        beginFilterChange();
+#endif
         mShowWarnings = showWarnings;
         invalidateFilter();
     }
@@ -163,7 +164,7 @@ IssuesDock::IssuesDock(QWidget *parent)
 
     mIssuesView->setModel(mProxyModel);
     mIssuesView->setIconSize(Utils::dpiScaled(QSize(16, 16)));
-    mIssuesView->setItemDelegate(new IssueDelegate);
+    mIssuesView->setItemDelegate(new IssueDelegate(this));
     mIssuesView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
 
     mFilterEdit->setFilteredView(mIssuesView);

@@ -1,6 +1,6 @@
 /*
  * propertytypeseditor.h
- * Copyright 2016-2021, Thorbjørn Lindeijer <bjorn@lindeijer.nl>>
+ * Copyright 2016-2022, Thorbjørn Lindeijer <bjorn@lindeijer.nl>>
  *
  * This file is part of Tiled.
  *
@@ -20,9 +20,10 @@
 
 #pragma once
 
-#include "properties.h"
+#include "propertytype.h"
 
 #include <QDialog>
+#include <QPointer>
 
 class QCheckBox;
 class QComboBox;
@@ -32,17 +33,28 @@ class QLineEdit;
 class QStringListModel;
 class QTreeView;
 
-class QtBrowserItem;
-class QtTreePropertyBrowser;
-
 namespace Ui {
 class PropertyTypesEditor;
 }
 
 namespace Tiled {
 
-class CustomPropertiesHelper;
+class AddValueProperty;
+class ColorButton;
+class PropertiesView;
 class PropertyTypesModel;
+class VariantMapProperty;
+
+struct PropertyTypesFilter
+{
+    PropertyTypesFilter(const QString &lastPath = QString());
+
+    const QString propertyTypesFilter;
+    const QString objectTypesJsonFilter;
+    const QString objectTypesXmlFilter;
+    QString filters;
+    QString selectedFilter;
+};
 
 class PropertyTypesEditor : public QDialog
 {
@@ -62,11 +74,12 @@ protected:
 private:
     void addPropertyType(PropertyType::Type type);
     void selectedPropertyTypesChanged();
-    void removeSelectedPropertyTypes();
+    void removeSelectedPropertyType();
     QModelIndex selectedPropertyTypeIndex() const;
     PropertyType *selectedPropertyType() const;
+    ClassPropertyType *selectedClassPropertyType() const;
 
-    void currentMemberItemChanged(QtBrowserItem *item);
+    void selectedMembersChanged();
 
     void propertyTypeNameChanged(const QModelIndex &index,
                                  const PropertyType &type);
@@ -75,40 +88,65 @@ private:
     void propertyTypesChanged();
 
     void updateDetails();
+    void updateClassUsageDetails(const ClassPropertyType &classType);
     void selectedValuesChanged(const QItemSelection &selected);
 
     void setCurrentPropertyType(PropertyType::Type type);
+    void addClassProperties();
+    void addEnumProperties();
 
     void setStorageType(EnumPropertyType::StorageType storageType);
     void setValuesAsFlags(bool flags);
     void addValue();
     void removeValues();
+    bool checkValueCount(int count);
 
+    void openClassOfPopup();
     void openAddMemberDialog();
     void addMember(const QString &name, const QVariant &value = QVariant());
-    void editMember(const QString &name);
     void removeMember();
-    void renameMember();
-    void renameMemberTo(const QString &name);
+    void renameSelectedMember();
+    void renameMember(const QString &name);
+    void renameMemberTo(const QString &oldName, const QString &name);
+
+    void importPropertyTypes();
+    void exportPropertyTypes();
 
     void selectFirstPropertyType();
     void valuesChanged();
-    void nameChanged(const QString &name);
+    void nameEditingFinished();
 
-    void memberValueChanged(const QString &name, const QVariant &value);
+    void colorChanged(const QColor &color);
+    void setDrawFill(bool value);
+    void setUsageFlags(int flags, bool value);
+    void classMembersChanged();
 
     void retranslateUi();
+
+    struct NamedFlag {
+        ClassPropertyType::ClassUsageFlag flag;
+        QString name;
+    };
+    QVector<NamedFlag> mFlagsWithNames;
 
     Ui::PropertyTypesEditor *mUi;
     PropertyTypesModel *mPropertyTypesModel;
     QFormLayout *mDetailsLayout = nullptr;
     QLineEdit *mNameEdit = nullptr;
+
     QComboBox *mStorageTypeComboBox = nullptr;
     QCheckBox *mValuesAsFlagsCheckBox = nullptr;
     QTreeView *mValuesView = nullptr;
     QStringListModel *mValuesModel;
-    QtTreePropertyBrowser *mMembersView = nullptr;
-    CustomPropertiesHelper *mPropertiesHelper = nullptr;
+
+    ColorButton *mColorButton = nullptr;
+    QCheckBox *mUseAsPropertyCheckBox = nullptr;
+    QCheckBox *mDrawFillCheckBox = nullptr;
+    QCheckBox *mClassOfCheckBox = nullptr;
+    QPushButton *mClassOfButton = nullptr;
+    PropertiesView *mMembersView = nullptr;
+    VariantMapProperty *mMembersProperty = nullptr;
+    QPointer<AddValueProperty> mAddValueProperty;
 
     bool mSettingPrefPropertyTypes = false;
     bool mSettingName = false;
@@ -124,6 +162,9 @@ private:
     QAction *mAddMemberAction;
     QAction *mRemoveMemberAction;
     QAction *mRenameMemberAction;
+
+    QAction *mExportAction;
+    QAction *mImportAction;
 
     PropertyType::Type mCurrentPropertyType = PropertyType::PT_Invalid;
 };

@@ -24,13 +24,11 @@
 #include "layerdock.h"
 
 #include "actionmanager.h"
-#include "changelayer.h"
 #include "layer.h"
 #include "layermodel.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "mapdocumentactionhandler.h"
-#include "objectgroup.h"
 #include "reversingproxymodel.h"
 #include "utils.h"
 #include "iconcheckdelegate.h"
@@ -40,10 +38,8 @@
 #include <QBoxLayout>
 #include <QContextMenuEvent>
 #include <QHeaderView>
-#include <QLabel>
 #include <QMenu>
 #include <QScopedValueRollback>
-#include <QSlider>
 #include <QStyledItemDelegate>
 #include <QToolBar>
 #include <QUndoStack>
@@ -55,8 +51,6 @@ using namespace Tiled;
 
 LayerDock::LayerDock(QWidget *parent):
     QDockWidget(parent),
-    mOpacityLabel(new QLabel),
-    mOpacitySlider(new QSlider(Qt::Horizontal)),
     mLayerView(new LayerView)
 {
     setObjectName(QLatin1String("layerDock"));
@@ -64,13 +58,6 @@ LayerDock::LayerDock(QWidget *parent):
     QWidget *widget = new QWidget(this);
     QVBoxLayout *layout = new QVBoxLayout(widget);
     layout->setContentsMargins(0, 0, 0, 0);
-
-    QHBoxLayout *opacityLayout = new QHBoxLayout;
-    mOpacitySlider->setRange(0, 100);
-    mOpacitySlider->setEnabled(false);
-    opacityLayout->addWidget(mOpacityLabel);
-    opacityLayout->addWidget(mOpacitySlider);
-    mOpacityLabel->setBuddy(mOpacitySlider);
 
     MapDocumentActionHandler *handler = MapDocumentActionHandler::instance();
 
@@ -100,20 +87,12 @@ LayerDock::LayerDock(QWidget *parent):
     buttonContainer->addWidget(spacerWidget);
     buttonContainer->addAction(ActionManager::action("HighlightCurrentLayer"));
 
-    QVBoxLayout *listAndToolBar = new QVBoxLayout;
-    listAndToolBar->setSpacing(0);
-    listAndToolBar->addWidget(mLayerView);
-    listAndToolBar->addWidget(buttonContainer);
-
-    layout->addLayout(opacityLayout);
-    layout->addLayout(listAndToolBar);
+    layout->setSpacing(0);
+    layout->addWidget(mLayerView);
+    layout->addWidget(buttonContainer);
 
     setWidget(widget);
     retranslateUi();
-
-    connect(mOpacitySlider, &QAbstractSlider::valueChanged,
-            this, &LayerDock::sliderValueChanged);
-    updateOpacitySlider();
 }
 
 void LayerDock::setMapDocument(MapDocument *mapDocument)
@@ -127,10 +106,6 @@ void LayerDock::setMapDocument(MapDocument *mapDocument)
     mMapDocument = mapDocument;
 
     if (mMapDocument) {
-        connect(mMapDocument, &MapDocument::changed,
-                this, &LayerDock::documentChanged);
-        connect(mMapDocument, &MapDocument::currentLayerChanged,
-                this, &LayerDock::updateOpacitySlider);
         connect(mMapDocument, &MapDocument::editLayerNameRequested,
                 this, &LayerDock::editLayerName);
     }
@@ -146,8 +121,6 @@ void LayerDock::setMapDocument(MapDocument *mapDocument)
         mLayerView->header()->resizeSection(1, iconSectionWidth);
         mLayerView->header()->resizeSection(2, iconSectionWidth);
     }
-
-    updateOpacitySlider();
 }
 
 void LayerDock::changeEvent(QEvent *e)
@@ -158,40 +131,6 @@ void LayerDock::changeEvent(QEvent *e)
     case QEvent::LanguageChange:
         retranslateUi();
         break;
-    default:
-        break;
-    }
-}
-
-void LayerDock::updateOpacitySlider()
-{
-    const bool enabled = mMapDocument &&
-                         mMapDocument->currentLayer() != nullptr;
-
-    mOpacitySlider->setEnabled(enabled);
-    mOpacityLabel->setEnabled(enabled);
-
-    QScopedValueRollback<bool> updating(mUpdatingSlider, true);
-    if (enabled) {
-        qreal opacity = mMapDocument->currentLayer()->opacity();
-        mOpacitySlider->setValue(qRound(opacity * 100));
-    } else {
-        mOpacitySlider->setValue(100);
-    }
-}
-
-void LayerDock::documentChanged(const ChangeEvent &change)
-{
-    switch (change.type) {
-    case ChangeEvent::LayerChanged: {
-        auto &layerChange = static_cast<const LayerChangeEvent&>(change);
-
-        // Don't update the slider when we're the ones changing the layer opacity
-        if ((layerChange.properties & LayerChangeEvent::OpacityProperty) && !mChangingLayerOpacity)
-            if (layerChange.layer == mMapDocument->currentLayer())
-                updateOpacitySlider();
-        break;
-    }
     default:
         break;
     }
@@ -209,33 +148,9 @@ void LayerDock::editLayerName()
     mLayerView->editLayerModelIndex(layerModel->index(currentLayer));
 }
 
-void LayerDock::sliderValueChanged(int opacity)
-{
-    if (!mMapDocument)
-        return;
-
-    // When the slider changes value just because we're updating it, it
-    // shouldn't try to set the layer opacity.
-    if (mUpdatingSlider)
-        return;
-
-    const auto layer = mMapDocument->currentLayer();
-    if (!layer)
-        return;
-
-    if (static_cast<int>(layer->opacity() * 100) != opacity) {
-        LayerModel *layerModel = mMapDocument->layerModel();
-        QScopedValueRollback<bool> updating(mChangingLayerOpacity, true);
-        layerModel->setData(layerModel->index(layer),
-                            qreal(opacity) / 100,
-                            LayerModel::OpacityRole);
-    }
-}
-
 void LayerDock::retranslateUi()
 {
     setWindowTitle(tr("Layers"));
-    mOpacityLabel->setText(tr("Opacity:"));
     mNewLayerButton->setToolTip(tr("New Layer"));
 }
 
@@ -285,6 +200,9 @@ LayerView::LayerView(QWidget *parent)
 
     connect(selectionModel(), &QItemSelectionModel::currentRowChanged, this, &LayerView::currentRowChanged);
 
+    connect(this, &QTreeView::expanded, this, &LayerView::onExpanded);
+    connect(this, &QTreeView::collapsed, this, &LayerView::onCollapsed);
+
     connect(this, &QAbstractItemView::pressed, this, &LayerView::indexPressed);
 }
 
@@ -307,14 +225,19 @@ void LayerView::setMapDocument(MapDocument *mapDocument)
     mMapDocument = mapDocument;
 
     if (mMapDocument) {
-        mProxyModel->setSourceModel(mMapDocument->layerModel());
+        auto layerModel = mMapDocument->layerModel();
+        mProxyModel->setSourceModel(layerModel);
 
+        connect(mMapDocument, &MapDocument::changed,
+                this, &LayerView::documentChanged);
         connect(mMapDocument, &MapDocument::currentLayerChanged,
                 this, &LayerView::currentLayerChanged);
         connect(mMapDocument, &MapDocument::selectedLayersChanged,
                 this, &LayerView::selectedLayersChanged);
         connect(mMapDocument, &MapDocument::layerRemoved,
                 this, &LayerView::layerRemoved);
+
+        restoreExpandedLayers();
 
         currentLayerChanged(mMapDocument->currentLayer());
         selectedLayersChanged();
@@ -326,6 +249,36 @@ void LayerView::setMapDocument(MapDocument *mapDocument)
 void LayerView::editLayerModelIndex(const QModelIndex &layerModelIndex)
 {
     edit(mProxyModel->mapFromSource(layerModelIndex));
+}
+
+void LayerView::onExpanded(const QModelIndex &proxyIndex)
+{
+    const LayerModel *layerModel = mMapDocument->layerModel();
+    const QModelIndex index = mProxyModel->mapToSource(proxyIndex);
+    if (Layer *layer = layerModel->toLayer(index))
+        if (mMapDocument)
+            mMapDocument->expandedGroupLayers.insert(layer->id());
+}
+
+void LayerView::onCollapsed(const QModelIndex &proxyIndex)
+{
+    const LayerModel *layerModel = mMapDocument->layerModel();
+    const QModelIndex index = mProxyModel->mapToSource(proxyIndex);
+    if (Layer *layer = layerModel->toLayer(index))
+        if (mMapDocument)
+            mMapDocument->expandedGroupLayers.remove(layer->id());
+}
+
+void LayerView::restoreExpandedLayers()
+{
+    const LayerModel *layerModel = mMapDocument->layerModel();
+    for (const int layerId : std::as_const(mMapDocument->expandedGroupLayers)) {
+        if (Layer *layer = mMapDocument->map()->findLayerById(layerId)) {
+            const QModelIndex sourceIndex = layerModel->index(layer);
+            const QModelIndex index = mProxyModel->mapFromSource(sourceIndex);
+            setExpanded(index, true);
+        }
+    }
 }
 
 void LayerView::currentRowChanged(const QModelIndex &proxyIndex)
@@ -345,6 +298,17 @@ void LayerView::indexPressed(const QModelIndex &proxyIndex)
     const QModelIndex index = mProxyModel->mapToSource(proxyIndex);
     if (Layer *layer = mMapDocument->layerModel()->toLayer(index))
         mMapDocument->setCurrentObject(layer);
+}
+
+void LayerView::documentChanged(const ChangeEvent &event)
+{
+    switch (event.type) {
+    case ChangeEvent::DocumentReloaded:
+        restoreExpandedLayers();
+        break;
+    default:
+        break;
+    }
 }
 
 void LayerView::currentLayerChanged(Layer *layer)
@@ -421,7 +385,13 @@ void LayerView::contextMenuEvent(QContextMenuEvent *event)
         menu.addAction(handler->actionDuplicateLayers());
         menu.addAction(handler->actionMergeLayersDown());
         menu.addAction(handler->actionRemoveLayers());
-        menu.addSeparator();
+    }
+    
+    // independent of whether index is valid but maintaining positioning
+    menu.addSeparator();
+    menu.addAction(handler->actionSelectAllLayers());
+
+    if (proxyIndex.isValid()) {
         menu.addAction(handler->actionMoveLayersUp());
         menu.addAction(handler->actionMoveLayersDown());
         menu.addSeparator();
@@ -441,24 +411,11 @@ void LayerView::contextMenuEvent(QContextMenuEvent *event)
 
 void LayerView::keyPressEvent(QKeyEvent *event)
 {
-    Layer *layer = mMapDocument ? mMapDocument->currentLayer() : nullptr;
-
     switch (event->key()) {
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
         if (mMapDocument && !mMapDocument->selectedLayers().isEmpty()) {
             mMapDocument->removeLayers(mMapDocument->selectedLayers());
-            return;
-        }
-        break;
-    case Qt::Key_Space:
-        if (layer) {
-            QUndoCommand *command = nullptr;
-            if (event->modifiers() & Qt::ControlModifier)
-                command = new SetLayerLocked(mMapDocument, layer, !layer->isLocked());
-            else
-                command = new SetLayerVisible(mMapDocument, layer, !layer->isVisible());
-            mMapDocument->undoStack()->push(command);
             return;
         }
         break;
@@ -487,6 +444,15 @@ void LayerView::selectionChanged(const QItemSelection &selected,
 
     QScopedValueRollback<bool> updating(mUpdatingSelectedLayers, true);
     mMapDocument->setSelectedLayers(layers);
+}
+
+QItemSelectionModel::SelectionFlags LayerView::selectionCommand(const QModelIndex &index, const QEvent *event) const
+{
+    // Prevent deselect by clicking on empty area
+    if (!index.isValid() && event && event->type() == QEvent::MouseButtonRelease)
+        return QItemSelectionModel::NoUpdate;
+
+    return QTreeView::selectionCommand(index, event);
 }
 
 #include "layerdock.moc"

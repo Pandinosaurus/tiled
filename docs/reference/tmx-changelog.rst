@@ -4,17 +4,45 @@ TMX Changelog
 Below are described the changes/additions that were made to the
 :doc:`tmx-map-format` for recent versions of Tiled.
 
+Tiled 1.10
+----------
+
+-  Renamed the ``class`` attribute on :ref:`tmx-tileset-tile` and
+   :ref:`tmx-object` back to ``type``, to keep compatibility with Tiled 1.8
+   and earlier. The attribute remains ``class`` for other elements since it
+   could not be renamed to ``type`` everywhere.
+
+Tiled 1.9
+---------
+
+-  Renamed the ``type`` attribute on :ref:`tmx-tileset-tile` and
+   :ref:`tmx-object` to ``class``.
+
+-  Added ``class`` attribute to :ref:`tmx-map`, :ref:`tmx-tileset`,
+   :ref:`tmx-layer`, :ref:`tmx-imagelayer`, :ref:`tmx-objectgroup`,
+   :ref:`tmx-group`, :ref:`tmx-wangset` and :ref:`tmx-wangcolor`.
+
+-  Added ``x``, ``y``, ``width`` and ``height`` attributes to the
+   :ref:`tmx-tileset-tile` element, which store the sub-rectangle of a tile's
+   image used to represent this tile. By default the entire image is used.
+
+-  Added ``tilerendersize`` and ``fillmode`` attributes to the
+   :ref:`tmx-tileset` element, which affect the way tiles are rendered.
+
 Tiled 1.8
 ---------
 
 -  Added support for user-defined custom property types. A reference to the
    type is saved as the new ``propertytype`` attribute on the
    :ref:`tmx-property` element.
+
 -  The :ref:`tmx-property` element can now contain a :ref:`tmx-properties`
-   element, in case the property value is a class. In this case the ``type``
-   attribute is set to the new value ``class``.
+   element, in case the property value is a class and at least one member value
+   has been set. The ``type`` attribute will have the new value ``class``.
+
 -  Added ``parallaxoriginx`` and ``parallaxoriginy`` attributes to the
    :ref:`tmx-map` element.
+
 -  Added ``repeatx`` and ``repeaty`` attributes to the :ref:`tmx-imagelayer`
    element.
 
@@ -45,6 +73,9 @@ Tiled 1.5
 
 -  The :ref:`tmx-wangset` element has replaced the now deprecated
    :ref:`tmx-terraintypes` element.
+
+-  Added ``parallaxx`` and ``parallaxy`` attributes to the :ref:`tmx-layer`,
+   :ref:`tmx-objectgroup`, :ref:`tmx-imagelayer` and :ref:`tmx-group` elements.
 
 Tiled 1.4
 ---------
@@ -120,8 +151,10 @@ Tiled 1.0
 
 -  A new :ref:`tmx-group` element was added which is a group layer that can
    have other layers as child elements. This means layers now form a hierarchy.
+
 -  Added Text objects, identified by a new :ref:`tmx-text` element which is
    used as a child of the :ref:`tmx-object` element.
+
 -  Added a :ref:`tile.type <tmx-tileset-tile>` attribute for supporting
    :ref:`typed-tiles`.
 
@@ -135,6 +168,7 @@ Tiled 0.17
 
 -  Added ``color`` and ``file`` as possible values for the
    :ref:`property.type <tmx-property>` attribute.
+
 -  Added support for editing multi-line string properties, which are
    written out differently.
 
@@ -152,16 +186,20 @@ Tiled 0.15
    :ref:`tmx-imagelayer` elements, replacing the ``x`` and ``y`` attributes
    previously used. This change was made for consistency with the other layer
    types.
+
 -  The tiles in an image collection tileset are no longer guaranteed to
    be consecutive, because removing tiles from the collection will no
    longer change the IDs of other tiles.
+
 -  The pure XML and Gzip-compressed tile layer data formats were
    deprecated, since they didn't have any advantage over other formats.
    Remaining formats are CSV, base64 and Zlib-compressed layer data.
+
 -  Added ``columns`` attribute to the
    :ref:`tmx-tileset` element, which specifies the number of tile columns in
    the tileset. For image collection tilesets it is editable and is used when
    displaying the tileset.
+
 -  The ``backgroundcolor`` attribute of the
    :ref:`tmx-map` element will now take the format ``#AARRGGBB`` when its alpha
    value differs from 255. Previously the alpha value was silently discarded.
@@ -200,8 +238,10 @@ Tiled 0.11
    in order to support the many variations of staggered hexagonal. The
    new ``staggerindex`` and ``staggeraxis`` attributes are also
    supported when using the ``staggered`` map orientation.
+
 -  Added an ``id`` attribute to the ``object`` element, which stores a
    map-unique ID of the object.
+
 -  Added a ``nextobjectid`` attribute to the ``map`` element, which
    stores the next available ID for new objects. This number is stored
    to prevent reuse of the same ID after objects have been removed.

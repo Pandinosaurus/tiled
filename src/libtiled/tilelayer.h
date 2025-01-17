@@ -73,24 +73,25 @@ class TILEDSHARED_EXPORT Cell
     Q_PROPERTY(bool rotatedHexagonal120 READ rotatedHexagonal120 WRITE setRotatedHexagonal120)
 
 public:
-    static Cell empty;
+    enum Flags {
+        FlippedHorizontally     = 0x01,
+        FlippedVertically       = 0x02,
+        FlippedAntiDiagonally   = 0x04,
+        RotatedHexagonal120     = 0x08,
+        Checked                 = 0x10,
+        VisualFlags             = FlippedHorizontally | FlippedVertically | FlippedAntiDiagonally | RotatedHexagonal120
+    };
 
-    Cell() :
-        _tileset(nullptr),
-        _tileId(-1),
-        _flags(0)
+    Cell() = default;
+
+    explicit Cell(Tile *tile)
+        : _tileset(tile ? tile->tileset() : nullptr)
+        , _tileId(tile ? tile->id() : -1)
     {}
 
-    explicit Cell(Tile *tile) :
-        _tileset(tile ? tile->tileset() : nullptr),
-        _tileId(tile ? tile->id() : -1),
-        _flags(0)
-    {}
-
-    Cell(Tileset *tileset, int tileId) :
-        _tileset(tileset),
-        _tileId(tileId),
-        _flags(0)
+    Cell(Tileset *tileset, int tileId)
+        : _tileset(tileset)
+        , _tileId(tileId)
     {}
 
     bool isEmpty() const { return _tileset == nullptr; }
@@ -99,7 +100,7 @@ public:
     {
         return _tileset == other._tileset
                 && _tileId == other._tileId
-                && (_flags & VisualFlags) == (other._flags & VisualFlags);
+                && flags() == other.flags();
     }
 
     bool operator != (const Cell &other) const
@@ -109,6 +110,7 @@ public:
 
     Tileset *tileset() const { return _tileset; }
     int tileId() const { return _tileId; }
+    int flags() const { return _flags & VisualFlags; }
 
     bool flippedHorizontally() const { return _flags & FlippedHorizontally; }
     bool flippedVertically() const { return _flags & FlippedVertically; }
@@ -130,19 +132,12 @@ public:
     void setTile(Tile *tile);
     bool refersTile(const Tile *tile) const;
 
-private:
-    enum Flags {
-        FlippedHorizontally     = 0x01,
-        FlippedVertically       = 0x02,
-        FlippedAntiDiagonally   = 0x04,
-        RotatedHexagonal120     = 0x08,
-        Checked                 = 0x10,
-        VisualFlags             = FlippedHorizontally | FlippedVertically | FlippedAntiDiagonally | RotatedHexagonal120
-    };
+    static Cell empty;
 
-    Tileset *_tileset;
-    int _tileId;
-    int _flags;
+private:
+    Tileset *_tileset = nullptr;
+    int _tileId = -1;
+    int _flags = 0;
 };
 
 inline Tile *Cell::tile() const
@@ -256,16 +251,16 @@ public:
         {
             if (lhs.mChunkPointer == lhs.mChunkEndPointer || rhs.mChunkPointer == rhs.mChunkEndPointer)
                 return lhs.mChunkPointer == rhs.mChunkPointer;
-            else
-                return lhs.mCellPointer == rhs.mCellPointer;
+
+            return lhs.mCellPointer == rhs.mCellPointer;
         }
 
         friend bool operator!=(const iterator& lhs, const iterator& rhs)
         {
             if (lhs.mChunkPointer == lhs.mChunkEndPointer || rhs.mChunkPointer == rhs.mChunkEndPointer)
                 return lhs.mChunkPointer != rhs.mChunkPointer;
-            else
-                return lhs.mCellPointer != rhs.mCellPointer;
+
+            return lhs.mCellPointer != rhs.mCellPointer;
         }
 
         Cell &value() const { return *mCellPointer; }
@@ -312,16 +307,16 @@ public:
         {
             if (lhs.mChunkPointer == lhs.mChunkEndPointer || rhs.mChunkPointer == rhs.mChunkEndPointer)
                 return lhs.mChunkPointer == rhs.mChunkPointer;
-            else
-                return lhs.mCellPointer == rhs.mCellPointer;
+
+            return lhs.mCellPointer == rhs.mCellPointer;
         }
 
         friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs)
         {
             if (lhs.mChunkPointer == lhs.mChunkEndPointer || rhs.mChunkPointer == rhs.mChunkEndPointer)
                 return lhs.mChunkPointer != rhs.mChunkPointer;
-            else
-                return lhs.mCellPointer != rhs.mCellPointer;
+
+            return lhs.mCellPointer != rhs.mCellPointer;
         }
 
         const Cell &value() const { return *mCellPointer; }
@@ -385,6 +380,7 @@ public:
 
     QRegion region(std::function<bool (const Cell &)> condition) const;
     QRegion region() const;
+    QRegion modifiedRegion() const;
 
     const Cell &cellAt(int x, int y) const;
     const Cell &cellAt(QPoint point) const;
@@ -512,11 +508,11 @@ public:
     Layer *mergedWith(const Layer *other) const override;
 
     /**
-     * Returns the region where this tile layer and the given tile layer
+     * Returns the region where this tile layer and the \a other tile layer
      * are different. The relative positions of the layers are taken into
      * account. The returned region is relative to this tile layer.
      */
-    QRegion computeDiffRegion(const TileLayer *other) const;
+    QRegion computeDiffRegion(const TileLayer &other) const;
 
     /**
      * Returns true if all tiles in the layer are empty.
@@ -546,12 +542,14 @@ private:
 
 inline QPoint TileLayer::iterator::key() const
 {
-    QPoint chunkStart = mChunkPointer.key();
+    const QPoint chunkPos = mChunkPointer.key();
+    QPoint tilePos = QPoint(chunkPos.x() * CHUNK_SIZE,
+                            chunkPos.y() * CHUNK_SIZE);
 
-    int index = mCellPointer - mChunkPointer.value().begin();
-    chunkStart += QPoint(index & CHUNK_MASK, index / CHUNK_SIZE);
+    const auto index = std::distance(mChunkPointer.value().begin(), mCellPointer);
+    tilePos += QPoint(index & CHUNK_MASK, index / CHUNK_SIZE);
 
-    return chunkStart;
+    return tilePos;
 }
 
 inline void TileLayer::iterator::advance()
@@ -567,12 +565,14 @@ inline void TileLayer::iterator::advance()
 
 inline QPoint TileLayer::const_iterator::key() const
 {
-    QPoint chunkStart = mChunkPointer.key();
+    const QPoint chunkPos = mChunkPointer.key();
+    QPoint tilePos = QPoint(chunkPos.x() * CHUNK_SIZE,
+                            chunkPos.y() * CHUNK_SIZE);
 
-    int index = mCellPointer - mChunkPointer.value().begin();
-    chunkStart += QPoint(index & CHUNK_MASK, index / CHUNK_SIZE);
+    const auto index = std::distance(mChunkPointer.value().begin(), mCellPointer);
+    tilePos += QPoint(index & CHUNK_MASK, index / CHUNK_SIZE);
 
-    return chunkStart;
+    return tilePos;
 }
 
 inline void TileLayer::const_iterator::advance()
@@ -628,6 +628,17 @@ inline QRegion TileLayer::region() const
 }
 
 /**
+ * Calculates the modified region of this layer. This includes both all
+ * non-empty cells as well as any cells that were marked as "checked".
+ */
+inline QRegion TileLayer::modifiedRegion() const
+{
+    return region([] (const Cell &cell) {
+        return !cell.isEmpty() || cell.checked();
+    });
+}
+
+/**
  * Returns a read-only reference to the cell at the given coordinates. The
  * coordinates have to be within this layer.
  */
@@ -635,8 +646,8 @@ inline const Cell &TileLayer::cellAt(int x, int y) const
 {
     if (const Chunk *chunk = findChunk(x, y))
         return chunk->cellAt(x & CHUNK_MASK, y & CHUNK_MASK);
-    else
-        return Cell::empty;
+
+    return Cell::empty;
 }
 
 inline const Cell &TileLayer::cellAt(QPoint point) const
@@ -653,5 +664,3 @@ inline void TileLayer::setCells(int x, int y, const TileLayer *tileLayer)
 using SharedTileLayer = QSharedPointer<TileLayer>;
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::Cell)

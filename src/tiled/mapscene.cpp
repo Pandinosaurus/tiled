@@ -33,11 +33,12 @@
 #include "maprenderer.h"
 #include "objectgroup.h"
 #include "objecttemplate.h"
-#include "preferences.h"
+#include "snaphelper.h"
 #include "stylehelper.h"
 #include "templatemanager.h"
 #include "tilesetmanager.h"
 #include "toolmanager.h"
+#include "world.h"
 #include "worldmanager.h"
 
 #include <QApplication>
@@ -46,8 +47,6 @@
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QPalette>
-
-#include "qtcompat_p.h"
 
 using namespace Tiled;
 
@@ -103,8 +102,6 @@ void MapScene::setMapDocument(MapDocument *mapDocument)
     if (mMapDocument) {
         connect(mMapDocument, &MapDocument::changed,
                 this, &MapScene::changeEvent);
-        connect(mMapDocument, &MapDocument::mapChanged,
-                this, &MapScene::mapChanged);
         connect(mMapDocument, &MapDocument::tilesetTilePositioningChanged,
                 this, [this] { update(); });
         connect(mMapDocument, &MapDocument::tileImageSourceChanged,
@@ -123,7 +120,7 @@ void MapScene::setShowTileCollisionShapes(bool enabled)
         return;
 
     mShowTileCollisionShapes = enabled;
-    for (auto mapItem : qAsConst(mMapItems))
+    for (auto mapItem : std::as_const(mMapItems))
         mapItem->setShowTileCollisionShapes(enabled);
 }
 
@@ -137,13 +134,34 @@ void MapScene::setParallaxEnabled(bool enabled)
 }
 
 /**
+ * Sets the painter scale on the MapRenderer instances for all MapItem
+ * instances.
+ */
+void MapScene::setPainterScale(qreal painterScale)
+{
+    for (auto mapItem : std::as_const(mMapItems))
+        mapItem->mapDocument()->renderer()->setPainterScale(painterScale);
+}
+
+void MapScene::setSuppressMouseMoveEvents(bool suppress)
+{
+    mSuppressMouseMoveEvents = suppress;
+
+    if (!suppress && mMouseMoveEventSuppressed) {
+        // Replay the last mouse move event
+        toolMouseMoved(mLastMousePos, mLastModifiers);
+        mMouseMoveEventSuppressed = false;
+    }
+}
+
+/**
  * Returns the bounding rect of the map. This can be different from the
  * sceneRect() when multiple maps are displayed.
  */
 QRectF MapScene::mapBoundingRect() const
 {
-    if (auto mapItem = mMapItems.value(mMapDocument))
-        return mapItem->boundingRect();
+    if (auto item = mapItem(mMapDocument))
+        return item->boundingRect();
     return QRectF();
 }
 
@@ -166,12 +184,15 @@ void MapScene::setSelectedTool(AbstractTool *tool)
         mSelectedTool = tool;
         mSelectedTool->activate(this);
 
-        mCurrentModifiers = QApplication::keyboardModifiers();
-        mSelectedTool->modifiersChanged(mCurrentModifiers);
+        if (!mSelectedTool)
+            return; // Tool deactivated itself upon activation
+
+        mToolModifiers = QApplication::keyboardModifiers();
+        mSelectedTool->modifiersChanged(mToolModifiers);
 
         if (mUnderMouse) {
             mSelectedTool->mouseEntered();
-            mSelectedTool->mouseMoved(mLastMousePos, mCurrentModifiers);
+            mSelectedTool->mouseMoved(mLastMousePos, mToolModifiers);
         }
     }
 }
@@ -233,8 +254,24 @@ QPointF MapScene::parallaxOffset(const Layer &layer) const
     if (!mParallaxEnabled)
         return {};
 
+    QPointF viewCenter = mViewRect.center();
+
+    if (Map *map = layer.map()) {
+        viewCenter += map->parallaxOrigin();
+
+        const MapItem *mapItem = nullptr;
+        for (auto it = mMapItems.begin(); it != mMapItems.end(); ++it) {
+            if (it.key()->map() == map) {
+                mapItem = it.value();
+                break;
+            }
+        }
+
+        if (mapItem)
+            viewCenter -= mapItem->pos();
+    }
+
     const QPointF parallaxFactor = layer.effectiveParallaxFactor();
-    const QPointF viewCenter = mViewRect.center() - mapDocument()->map()->parallaxOrigin();
     return QPointF((1.0 - parallaxFactor.x()) * viewCenter.x(),
                    (1.0 - parallaxFactor.y()) * viewCenter.y());
 }
@@ -254,13 +291,14 @@ void MapScene::refreshScene()
     }
 
     const WorldManager &worldManager = WorldManager::instance();
-    const QString currentMapFile = mMapDocument->canonicalFilePath();
+    const QString &currentMapFile = mMapDocument->fileName();
 
-    if (const World *world = worldManager.worldForMap(currentMapFile)) {
+    if (auto worldDocument = worldManager.worldForMap(currentMapFile)) {
+        const auto world = worldDocument->world();
         const QPoint currentMapPosition = world->mapRect(currentMapFile).topLeft();
         auto const contextMaps = world->contextMaps(currentMapFile);
 
-        for (const World::MapEntry &mapEntry : contextMaps) {
+        for (const WorldMapEntry &mapEntry : contextMaps) {
             MapDocumentPtr mapDocument;
 
             if (mapEntry.fileName == currentMapFile) {
@@ -288,6 +326,9 @@ void MapScene::refreshScene()
 
     mMapItems.swap(mapItems);
     qDeleteAll(mapItems);       // delete all map items that didn't get reused
+
+    for (MapItem *mapItem : std::as_const(mMapItems))
+        mapItem->updateLayerPositions();
 
     updateBackgroundColor();
     updateSceneRect();
@@ -326,7 +367,7 @@ void MapScene::updateSceneRect()
 {
     QRectF sceneRect;
 
-    for (MapItem *mapItem : qAsConst(mMapItems))
+    for (MapItem *mapItem : std::as_const(mMapItems))
         sceneRect |= mapItem->boundingRect().translated(mapItem->pos());
 
     setSceneRect(sceneRect);
@@ -339,7 +380,7 @@ void MapScene::setWorldsEnabled(bool enabled)
 
     mWorldsEnabled = enabled;
 
-    for (MapItem *mapItem : qAsConst(mMapItems))
+    for (MapItem *mapItem : std::as_const(mMapItems))
         mapItem->setVisible(mWorldsEnabled || mapItem->mapDocument() == mMapDocument);
 }
 
@@ -353,7 +394,6 @@ MapItem *MapScene::takeOrCreateMapItem(const MapDocumentPtr &mapDocument, MapIte
         connect(mapItem, &MapItem::boundingRectChanged, this, &MapScene::updateSceneRect);
         connect(this, &MapScene::parallaxParametersChanged, mapItem, &MapItem::updateLayerPositions);
         addItem(mapItem);
-        mapItem->updateLayerPositions();
     } else {
         mapItem->setDisplayMode(displayMode);
     }
@@ -363,26 +403,37 @@ MapItem *MapScene::takeOrCreateMapItem(const MapDocumentPtr &mapDocument, MapIte
 void MapScene::changeEvent(const ChangeEvent &change)
 {
     switch (change.type) {
-    case ChangeEvent::MapChanged:
-        if (static_cast<const MapChangeEvent&>(change).property == Map::ParallaxOriginProperty)
+    case ChangeEvent::MapChanged: {
+        switch (static_cast<const MapChangeEvent&>(change).property) {
+        case Map::ParallaxOriginProperty:
             emit parallaxParametersChanged();
+            break;
+        case Map::BackgroundColorProperty:
+            updateBackgroundColor();
+            break;
+        default:
+            break;
+        }
         break;
+    }
+    case ChangeEvent::TilesetChanged:{
+        auto &tilesetChange = static_cast<const TilesetChangeEvent&>(change);
+        switch (tilesetChange.property) {
+        case Tileset::FillModeProperty:
+        case Tileset::TileRenderSizeProperty:
+            repaintTileset(tilesetChange.tileset);
+            break;
+        }
+        break;
+    }
     default:
         break;
     }
 }
 
-/**
- * Updates the possibly changed background color.
- */
-void MapScene::mapChanged()
-{
-    updateBackgroundColor();
-}
-
 void MapScene::repaintTileset(Tileset *tileset)
 {
-    for (MapItem *mapItem : qAsConst(mMapItems)) {
+    for (MapItem *mapItem : std::as_const(mMapItems)) {
         if (contains(mapItem->mapDocument()->map()->tilesets(), tileset)) {
             update();
             return;
@@ -418,6 +469,9 @@ bool MapScene::event(QEvent *event)
         if (mSelectedTool)
             mSelectedTool->mouseLeft();
         break;
+    case QEvent::FontChange:
+        emit fontChanged();
+        break;
     default:
         break;
     }
@@ -437,7 +491,12 @@ void MapScene::keyPressEvent(QKeyEvent *event)
 void MapScene::mouseMoveEvent(QGraphicsSceneMouseEvent *mouseEvent)
 {
     mLastMousePos = mouseEvent->scenePos();
+    mLastModifiers = mouseEvent->modifiers();
 
+    if (mSuppressMouseMoveEvents) {
+        mMouseMoveEventSuppressed = true;
+        return;
+    }
     if (!mMapDocument)
         return;
 
@@ -450,11 +509,8 @@ void MapScene::mouseMoveEvent(QGraphicsSceneMouseEvent *mouseEvent)
 //    if (mouseEvent->isAccepted())
 //        return;
 
-    if (mSelectedTool) {
-        mSelectedTool->mouseMoved(mouseEvent->scenePos(),
-                                  mouseEvent->modifiers());
+    if (toolMouseMoved(mLastMousePos, mLastModifiers))
         mouseEvent->accept();
-    }
 }
 
 void MapScene::mousePressEvent(QGraphicsSceneMouseEvent *mouseEvent)
@@ -548,10 +604,13 @@ void MapScene::dropEvent(QGraphicsSceneDragDropEvent *event)
     if (!objectTemplate || !mapDocument()->templateAllowed(objectTemplate))
         return;
 
+    QPointF pos = event->scenePos();
+    SnapHelper(mapDocument()->renderer(), event->modifiers()).snap(pos);
+
     MapObject *newMapObject = new MapObject;
     newMapObject->setObjectTemplate(objectTemplate);
     newMapObject->syncWithTemplate();
-    newMapObject->setPosition(event->scenePos());
+    newMapObject->setPosition(pos);
 
     auto addObjectCommand = new AddMapObjects(mapDocument(),
                                               objectGroup,
@@ -578,11 +637,11 @@ bool MapScene::eventFilter(QObject *, QEvent *event)
     case QEvent::KeyPress:
     case QEvent::KeyRelease: {
             QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
-            Qt::KeyboardModifiers newModifiers = keyEvent->modifiers();
+            const Qt::KeyboardModifiers newModifiers = keyEvent->modifiers();
 
-            if (mSelectedTool && newModifiers != mCurrentModifiers) {
+            if (mSelectedTool && newModifiers != mToolModifiers) {
                 mSelectedTool->modifiersChanged(newModifiers);
-                mCurrentModifiers = newModifiers;
+                mToolModifiers = newModifiers;
             }
         }
         break;
@@ -591,6 +650,20 @@ bool MapScene::eventFilter(QObject *, QEvent *event)
     }
 
     return false;
+}
+
+bool MapScene::toolMouseMoved(const QPointF &pos, Qt::KeyboardModifiers modifiers)
+{
+    if (!mSelectedTool)
+        return false;
+
+    if (mToolModifiers != modifiers) {
+        mToolModifiers = modifiers;
+        mSelectedTool->modifiersChanged(modifiers);
+    }
+
+    mSelectedTool->mouseMoved(pos, modifiers);
+    return true;
 }
 
 #include "moc_mapscene.cpp"

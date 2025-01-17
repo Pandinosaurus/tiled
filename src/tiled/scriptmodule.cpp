@@ -22,25 +22,35 @@
 
 #include "actionmanager.h"
 #include "commandmanager.h"
+#include "compression.h"
+#include "documentmanager.h"
 #include "editabletileset.h"
 #include "issuesmodel.h"
 #include "logginginterface.h"
 #include "mainwindow.h"
 #include "mapeditor.h"
+#include "projectmanager.h"
+#include "scriptdialog.h"
 #include "scriptedaction.h"
 #include "scriptedfileformat.h"
 #include "scriptedtool.h"
 #include "scriptfileformatwrappers.h"
+#include "scriptimage.h"
 #include "scriptmanager.h"
 #include "tilesetdocument.h"
 #include "tileseteditor.h"
+#include "worlddocument.h"
+#include "worldmanager.h"
 
 #include <QAction>
 #include <QCoreApplication>
+#include <QFileDialog> 
 #include <QInputDialog>
+#include <QLibraryInfo>
 #include <QMenu>
 #include <QMessageBox>
 #include <QQmlEngine>
+#include <QVersionNumber>
 
 namespace Tiled {
 
@@ -52,26 +62,35 @@ ScriptModule::ScriptModule(QObject *parent)
     if (auto documentManager = DocumentManager::maybeInstance()) {
         connect(documentManager, &DocumentManager::documentCreated, this, &ScriptModule::documentCreated);
         connect(documentManager, &DocumentManager::documentOpened, this, &ScriptModule::documentOpened);
+        connect(documentManager, &DocumentManager::documentReloaded, this, &ScriptModule::documentReloaded);
         connect(documentManager, &DocumentManager::documentAboutToBeSaved, this, &ScriptModule::documentAboutToBeSaved);
         connect(documentManager, &DocumentManager::documentSaved, this, &ScriptModule::documentSaved);
         connect(documentManager, &DocumentManager::documentAboutToClose, this, &ScriptModule::documentAboutToClose);
         connect(documentManager, &DocumentManager::currentDocumentChanged, this, &ScriptModule::currentDocumentChanged);
+
+        connect(&WorldManager::instance(), &WorldManager::worldsChanged, this, &ScriptModule::worldsChanged);
     }
 }
 
 ScriptModule::~ScriptModule()
 {
-    for (const auto &pair : mRegisteredActions)
-        ActionManager::unregisterAction(pair.second.get(), pair.first);
+    for (const auto &[id, action] : mRegisteredActions)
+        ActionManager::unregisterAction(action.get(), id);
 
     ActionManager::clearMenuExtensions();
 
     IssuesModel::instance().removeIssuesWithContext(this);
+    ScriptDialog::deleteAllDialogs();
 }
 
 QString ScriptModule::version() const
 {
     return QCoreApplication::applicationVersion();
+}
+
+QString ScriptModule::qtVersion() const
+{
+    return QString::fromLatin1(qVersion());
 }
 
 QString ScriptModule::platform() const
@@ -108,15 +127,19 @@ QString ScriptModule::applicationDirPath() const
     return QCoreApplication::applicationDirPath();
 }
 
-static QStringList idsToNames(const QList<Id> &ids)
+QString ScriptModule::projectFilePath() const
 {
-    QStringList names;
-    for (const Id &id : ids)
-        names.append(QLatin1String(id.name()));
+    return ProjectManager::instance()->project().fileName();
+}
 
-    names.sort();
+QStringList ScriptModule::scriptArguments() const
+{
+    return mScriptArguments;
+}
 
-    return names;
+void ScriptModule::setScriptArguments(const QStringList &arguments)
+{
+    mScriptArguments = arguments;
 }
 
 QStringList ScriptModule::actions() const
@@ -173,9 +196,16 @@ bool ScriptModule::setActiveAsset(EditableAsset *asset) const
         return false;
     }
 
-    for (const DocumentPtr &document : documentManager->documents())
-        if (document->editable() == asset)
-            return documentManager->switchToDocument(document.data());
+    if (asset->checkReadOnly())
+        return false;
+
+    if (auto document = asset->document())
+        return documentManager->switchToDocument(document);
+
+    if (auto document = asset->createDocument()) {
+        documentManager->addDocument(document);
+        return true;
+    }
 
     return false;
 }
@@ -183,10 +213,17 @@ bool ScriptModule::setActiveAsset(EditableAsset *asset) const
 QList<QObject *> ScriptModule::openAssets() const
 {
     QList<QObject *> assets;
-    if (auto documentManager = DocumentManager::maybeInstance())
+    if (auto documentManager = DocumentManager::maybeInstance()) {
+        assets.reserve(documentManager->documents().size());
         for (const DocumentPtr &document : documentManager->documents())
             assets.append(document->editable());
+    }
     return assets;
+}
+
+EditableAsset *ScriptModule::project()
+{
+    return ProjectManager::instance()->editableProject();
 }
 
 TilesetEditor *ScriptModule::tilesetEditor() const
@@ -203,6 +240,20 @@ MapEditor *ScriptModule::mapEditor() const
     return nullptr;
 }
 
+QColor ScriptModule::color(const QString &name) const
+{
+#if QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
+    return QColor::isValidColor(name) ? QColor(name) : QColor();
+#else
+    return QColor::fromString(name);
+#endif
+}
+
+QColor ScriptModule::color(float r, float g, float b, float a) const
+{
+    return QColor::fromRgbF(r, g, b, a);
+}
+
 FilePath ScriptModule::filePath(const QUrl &path) const
 {
     return { path };
@@ -211,6 +262,52 @@ FilePath ScriptModule::filePath(const QUrl &path) const
 ObjectRef ScriptModule::objectRef(int id) const
 {
     return { id };
+}
+
+QVariant ScriptModule::propertyValue(const QString &typeName, const QJSValue &value) const
+{
+    auto type = Object::propertyTypes().findPropertyValueType(typeName);
+    if (!type) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Unknown type: %1").arg(typeName));
+        return {};
+    }
+
+    const QVariant var = value.toVariant();
+
+    switch (type->type) {
+    case PropertyType::PT_Invalid:
+    case PropertyType::PT_Class:
+        if (var.userType() != QVariant::Map) {
+            ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Expected object to initialize class value"));
+            return {};
+        }
+        break;
+    case PropertyType::PT_Enum:
+        // Call toPropertyValue to support using strings to create a value
+        return type->toPropertyValue(var, ExportContext());
+    }
+
+    return type->wrap(var);
+}
+
+QCursor ScriptModule::cursor(Qt::CursorShape shape)
+{
+    return shape;
+}
+
+QCursor ScriptModule::cursor(ScriptImage *image, int hotX, int hotY)
+{
+    if (!image) {
+        ScriptManager::instance().throwNullArgError(0);
+        return {};
+    }
+
+    return QCursor { QPixmap::fromImage(image->image()), hotX, hotY };
+}
+
+bool ScriptModule::versionLessThan(const QString &a, const QString &b)
+{
+    return QVersionNumber::fromString(a) < QVersionNumber::fromString(b);
 }
 
 EditableAsset *ScriptModule::open(const QString &fileName) const
@@ -474,6 +571,17 @@ void ScriptModule::extendMenu(const QByteArray &idName, QJSValue items)
     ActionManager::registerMenuExtension(menuId, extension);
 }
 
+QByteArray ScriptModule::compress(const QByteArray &data, CompressionMethod method, int compressionLevel)
+{
+    return Tiled::compress(data, static_cast<Tiled::CompressionMethod>(method), compressionLevel);
+}
+
+QByteArray ScriptModule::decompress(const QByteArray &data, CompressionMethod method)
+{
+    return Tiled::decompress(data, data.size(), static_cast<Tiled::CompressionMethod>(method));
+}
+
+
 void ScriptModule::trigger(const QByteArray &actionName) const
 {
     if (QAction *action = ActionManager::findAction(actionName))
@@ -498,17 +606,70 @@ void ScriptModule::executeCommand(const QString &name, bool inTerminal) const
 
 void ScriptModule::alert(const QString &text, const QString &title) const
 {
-    QMessageBox::warning(MainWindow::instance(), title, text);
+    ScriptManager::ResetBlocker blocker;
+    QMessageBox msgBox(QMessageBox::Warning, title, text, QMessageBox::Ok,
+                       MainWindow::maybeInstance());
+
+    // On macOS, QMessageBox hides the title by default
+#ifdef Q_OS_MAC
+    msgBox.QDialog::setWindowTitle(title);
+#endif
+
+    msgBox.exec();
 }
 
 bool ScriptModule::confirm(const QString &text, const QString &title) const
 {
-    return QMessageBox::question(MainWindow::instance(), title, text) == QMessageBox::Yes;
+    ScriptManager::ResetBlocker blocker;
+    QMessageBox msgBox(QMessageBox::Question, title, text,
+                       QMessageBox::Yes | QMessageBox::No,
+                       MainWindow::maybeInstance());
+
+    // On macOS, QMessageBox hides the title by default
+#ifdef Q_OS_MAC
+    msgBox.QDialog::setWindowTitle(title);
+#endif
+
+    return msgBox.exec() == QMessageBox::Yes;
 }
 
 QString ScriptModule::prompt(const QString &label, const QString &text, const QString &title) const
 {
-    return QInputDialog::getText(MainWindow::instance(), title, label, QLineEdit::Normal, text);
+    ScriptManager::ResetBlocker blocker;
+    return QInputDialog::getText(MainWindow::maybeInstance(), title, label, QLineEdit::Normal, text);
+}
+
+QString ScriptModule::promptDirectory(const QString &defaultDir, const QString &title) const
+{
+    ScriptManager::ResetBlocker blocker;
+    return QFileDialog::getExistingDirectory(MainWindow::maybeInstance(),
+                                             title.isEmpty() ? tr("Open Directory") : title,
+                                             defaultDir,
+                                             QFileDialog::ShowDirsOnly);
+}
+
+QStringList ScriptModule::promptOpenFiles(const QString &defaultDir, const QString &filters, const QString &title) const
+{
+    ScriptManager::ResetBlocker blocker;
+    return QFileDialog::getOpenFileNames(MainWindow::maybeInstance(),
+                                         title.isEmpty() ? tr("Open Files") : title,
+                                         defaultDir, filters);
+}
+
+QString ScriptModule::promptOpenFile(const QString &defaultDir, const QString &filters, const QString &title) const
+{
+    ScriptManager::ResetBlocker blocker;
+    return QFileDialog::getOpenFileName(MainWindow::maybeInstance(),
+                                        title.isEmpty() ? tr("Open File") : title,
+                                        defaultDir, filters);
+}
+
+QString ScriptModule::promptSaveFile(const QString &defaultDir, const QString &filters, const QString &title) const
+{
+    ScriptManager::ResetBlocker blocker;
+    return QFileDialog::getSaveFileName(MainWindow::maybeInstance(),
+                                        title.isEmpty() ? tr("Save File") : title,
+                                        defaultDir, filters);
 }
 
 void ScriptModule::log(const QString &text) const
@@ -551,6 +712,11 @@ void ScriptModule::documentOpened(Document *document)
     emit assetOpened(document->editable());
 }
 
+void ScriptModule::documentReloaded(Document *document)
+{
+    emit assetReloaded(document->editable());
+}
+
 void ScriptModule::documentAboutToBeSaved(Document *document)
 {
     emit assetAboutToBeSaved(document->editable());
@@ -569,6 +735,36 @@ void ScriptModule::documentAboutToClose(Document *document)
 void ScriptModule::currentDocumentChanged(Document *document)
 {
     emit activeAssetChanged(document ? document->editable() : nullptr);
+}
+
+QList<QObject *> ScriptModule::worlds() const
+{
+    QList<QObject*> worlds;
+
+    auto documentManager = DocumentManager::maybeInstance();
+    if (!documentManager)
+        return worlds;
+
+    for (auto &worldDocument : WorldManager::instance().worlds())
+        worlds.append(worldDocument->editable());
+
+    return worlds;
+}
+
+void ScriptModule::loadWorld(const QString &fileName) const
+{
+    WorldManager::instance().loadWorld(fileName);
+}
+
+void ScriptModule::unloadWorld(const QString &fileName) const
+{
+    if (auto worldDocument = WorldManager::instance().findWorld(fileName))
+        WorldManager::instance().unloadWorld(worldDocument);
+}
+
+void ScriptModule::unloadAllWorlds() const
+{
+    WorldManager::instance().unloadAllWorlds();
 }
 
 } // namespace Tiled

@@ -1,7 +1,7 @@
 /*
  * automapperwrapper.h
- * Copyright 2010-2011, Stefan Beller, stefanbeller@googlemail.com
- * Copyright 2018-2021, Thorbjørn Lindeijer <bjorn@lindeijer.nl>
+ * Copyright 2010-2011, Stefan Beller <stefanbeller@googlemail.com>
+ * Copyright 2018-2022, Thorbjørn Lindeijer <bjorn@lindeijer.nl>
  *
  * This file is part of Tiled.
  *
@@ -21,49 +21,28 @@
 
 #pragma once
 
-#include "automapper.h"
+#include "painttilelayer.h"
 
-#include <QMap>
-#include <QUndoCommand>
 #include <QVector>
-
-#include <unordered_map>
 
 namespace Tiled {
 
-class MapDocument;
+class AutoMapper;
 
 /**
- * This is a wrapper class for applying one or more AutoMapper instances,
- * providing undo/redo functionality.
+ * This is a wrapper class for applying the changes by one or more AutoMapper
+ * instances, providing undo/redo functionality.
  *
- * This class will take a snapshot of the layers before and after the
- * automapping is done. In between the instances of AutoMapper are doing the
- * work.
+ * It derives from PaintTileLayer so that the changes can be merged with the
+ * previous paint operation.
  */
-class AutoMapperWrapper : public QUndoCommand
+class AutoMapperWrapper : public PaintTileLayer
 {
 public:
     AutoMapperWrapper(MapDocument *mapDocument,
-                      const QVector<AutoMapper *> &autoMappers,
-                      QRegion *where);
-    ~AutoMapperWrapper() override;
-
-    void undo() override;
-    void redo() override;
-
-private:
-    void patchLayer(TileLayer *target, const TileLayer &layer, const QRegion &region);
-
-    struct TouchedLayerData
-    {
-        QRegion region;
-        std::unique_ptr<TileLayer> before;
-        std::unique_ptr<TileLayer> after;
-    };
-
-    MapDocument *mMapDocument;
-    std::unordered_map<TileLayer*, TouchedLayerData> mTouchedTileLayers;
+                      const QVector<AutoMapper*> &autoMappers,
+                      const QRegion &where,
+                      const TileLayer *touchedLayer = nullptr);
 };
 
 } // namespace Tiled

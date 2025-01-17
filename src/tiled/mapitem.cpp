@@ -18,9 +18,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "abstractworldtool.h"
 #include "mapitem.h"
 
+#include "abstractworldtool.h"
+#include "changeevents.h"
+#include "changeworld.h"
 #include "documentmanager.h"
 #include "grouplayer.h"
 #include "grouplayeritem.h"
@@ -37,6 +39,8 @@
 #include "tilelayer.h"
 #include "tilelayeritem.h"
 #include "tileselectionitem.h"
+#include "world.h"
+#include "worldmanager.h"
 #include "zoomable.h"
 
 #include <QCursor>
@@ -44,9 +48,6 @@
 #include <QPen>
 #include <QStyleOptionGraphicsItem>
 #include <QWidget>
-
-#include "changeevents.h"
-#include "qtcompat_p.h"
 
 #include <memory>
 
@@ -150,16 +151,16 @@ MapItem::MapItem(const MapDocumentPtr &mapDocument, DisplayMode displayMode,
     connect(prefs, &Preferences::objectLineWidthChanged, this, &MapItem::setObjectLineWidth);
     connect(prefs, &Preferences::showTileObjectOutlinesChanged, this, &MapItem::setShowTileObjectOutlines);
     connect(prefs, &Preferences::highlightCurrentLayerChanged, this, &MapItem::updateSelectedLayersHighlight);
-    connect(prefs, &Preferences::objectTypesChanged, this, &MapItem::syncAllObjectItems);
+    connect(prefs, &Preferences::propertyTypesChanged, this, &MapItem::syncAllObjectItems);
     connect(prefs, &Preferences::backgroundFadeColorChanged, this, [this] (QColor color) { mDarkRectangle->setBrush(color); });
 
     connect(mapDocument.data(), &Document::changed, this, &MapItem::documentChanged);
-    connect(mapDocument.data(), &MapDocument::mapChanged, this, &MapItem::mapChanged);
+    connect(mapDocument.data(), &MapDocument::mapResized, this, &MapItem::mapChanged);
     connect(mapDocument.data(), &MapDocument::regionChanged, this, &MapItem::repaintRegion);
     connect(mapDocument.data(), &MapDocument::tileLayerChanged, this, &MapItem::tileLayerChanged);
     connect(mapDocument.data(), &MapDocument::layerAdded, this, &MapItem::layerAdded);
+    connect(mapDocument.data(), &MapDocument::layerAboutToBeRemoved, this, &MapItem::layerAboutToBeRemoved);
     connect(mapDocument.data(), &MapDocument::layerRemoved, this, &MapItem::layerRemoved);
-    connect(mapDocument.data(), &MapDocument::imageLayerChanged, this, &MapItem::imageLayerChanged);
     connect(mapDocument.data(), &MapDocument::selectedLayersChanged, this, &MapItem::updateSelectedLayersHighlight);
     connect(mapDocument.data(), &MapDocument::tilesetTilePositioningChanged, this, &MapItem::adaptToTilesetTileSizeChanges);
     connect(mapDocument.data(), &MapDocument::tileImageSourceChanged, this, &MapItem::adaptToTileSizeChanges);
@@ -215,7 +216,7 @@ void MapItem::setDisplayMode(DisplayMode displayMode)
     mDisplayMode = displayMode;
 
     // Enabled state is checked by selection tools
-    for (LayerItem *layerItem : qAsConst(mLayerItems))
+    for (LayerItem *layerItem : std::as_const(mLayerItems))
         layerItem->setEnabled(displayMode == Editable);
 
     if (displayMode == ReadOnly) {
@@ -250,12 +251,12 @@ void MapItem::setShowTileCollisionShapes(bool enabled)
 {
     mapDocument()->renderer()->setFlag(ShowTileCollisionShapes, enabled);
 
-    for (MapObjectItem *item : qAsConst(mObjectItems))
+    for (MapObjectItem *item : std::as_const(mObjectItems))
         if (Tile *tile = item->mapObject()->cell().tile())
             if (tile->objectGroup() && !tile->objectGroup()->isEmpty())
                 item->syncWithMapObject();
 
-    for (LayerItem *item : qAsConst(mLayerItems))
+    for (LayerItem *item : std::as_const(mLayerItems))
         if (item->layer()->isTileLayer())
             item->update();
 }
@@ -264,7 +265,7 @@ void MapItem::updateLayerPositions()
 {
     const MapScene *mapScene = static_cast<MapScene*>(scene());
 
-    for (LayerItem *layerItem : qAsConst(mLayerItems)) {
+    for (LayerItem *layerItem : std::as_const(mLayerItems)) {
         const Layer &layer = *layerItem->layer();
         layerItem->setPos(mapScene->layerItemPosition(layer));
     }
@@ -349,18 +350,8 @@ void MapItem::repaintRegion(const QRegion &region, TileLayer *tileLayer)
     const QMargins margins = mapDocument()->map()->drawMargins();
     TileLayerItem *tileLayerItem = static_cast<TileLayerItem*>(mLayerItems.value(tileLayer));
 
-#if QT_VERSION < 0x050800
-    const auto rects = region.rects();
-    for (const QRect &r : rects) {
-#else
     for (const QRect &r : region) {
-#endif
-        QRectF boundingRect = renderer->boundingRect(r);
-        boundingRect.adjust(-margins.left(),
-                            -margins.top(),
-                            margins.right(),
-                            margins.bottom());
-
+        QRectF boundingRect = renderer->boundingRect(r).marginsAdded(margins);
         tileLayerItem->update(boundingRect);
     }
 }
@@ -368,8 +359,70 @@ void MapItem::repaintRegion(const QRegion &region, TileLayer *tileLayer)
 void MapItem::documentChanged(const ChangeEvent &change)
 {
     switch (change.type) {
+    case ChangeEvent::DocumentAboutToReload:
+        for (Layer *layer : mMapDocument->map()->layers())
+            deleteLayerItems(layer);
+        break;
+    case ChangeEvent::DocumentReloaded: {
+        // The renderer has been re-created
+        auto lineWidth = Preferences::instance()->objectLineWidth();
+        mapDocument()->renderer()->setObjectLineWidth(lineWidth);
+
+        createLayerItems(mMapDocument->map()->layers());
+
+        updateBoundingRect();
+        updateLayerPositions();
+        break;
+    }
+    case ChangeEvent::ObjectsChanged: {
+        auto &objectsChange = static_cast<const ObjectsChangeEvent&>(change);
+        if (!objectsChange.objects.isEmpty() && (objectsChange.properties & ObjectsChangeEvent::ClassProperty)) {
+            const auto typeId = objectsChange.objects.first()->typeId();
+            if (typeId == Object::MapObjectType) {
+                for (Object *object : objectsChange.objects)
+                    mObjectItems.value(static_cast<MapObject*>(object))->syncWithMapObject();
+            } else if (typeId == Object::TileType) {
+                if (mapDocument()->renderer()->testFlag(ShowTileObjectOutlines))
+                    for (MapObjectItem *item : std::as_const(mObjectItems))
+                        if (item->mapObject()->isTileObject())
+                            item->syncWithMapObject();
+            }
+        }
+
+        break;
+    }
+    case ChangeEvent::MapChanged: {
+        auto &mapChange = static_cast<const MapChangeEvent&>(change);
+        switch (mapChange.property) {
+        case Map::TileSizeProperty:
+        case Map::InfiniteProperty:
+        case Map::HexSideLengthProperty:
+        case Map::StaggerAxisProperty:
+        case Map::StaggerIndexProperty:
+        case Map::ParallaxOriginProperty:
+        case Map::OrientationProperty:
+            mapChanged();
+            break;
+        case Map::RenderOrderProperty:
+        case Map::BackgroundColorProperty:
+        case Map::LayerDataFormatProperty:
+        case Map::CompressionLevelProperty:
+        case Map::ChunkSizeProperty:
+            break;
+        }
+        break;
+    }
     case ChangeEvent::LayerChanged:
         layerChanged(static_cast<const LayerChangeEvent&>(change));
+        break;
+    case ChangeEvent::TileLayerChanged: {
+        auto &e = static_cast<const TileLayerChangeEvent&>(change);
+        if (e.properties & TileLayerChangeEvent::SizeProperty)
+            tileLayerChanged(e.tileLayer(), MapDocument::TileLayerChangeFlags());
+        break;
+    }
+    case ChangeEvent::ImageLayerChanged:
+        imageLayerChanged(static_cast<const ImageLayerChangeEvent&>(change).imageLayer());
         break;
     case ChangeEvent::MapObjectAboutToBeRemoved: {
         auto &e = static_cast<const MapObjectEvent&>(change);
@@ -397,6 +450,17 @@ void MapItem::documentChanged(const ChangeEvent &change)
 
         break;
     }
+    case ChangeEvent::TilesetChanged: {
+        auto &tilesetChange = static_cast<const TilesetChangeEvent&>(change);
+        if (tilesetChange.property == Tileset::TileRenderSizeProperty) {
+            // This might affect the draw margins
+            for (QGraphicsItem *item : std::as_const(mLayerItems)) {
+                if (TileLayerItem *tli = dynamic_cast<TileLayerItem*>(item))
+                    tli->syncWithTileLayer();
+            }
+        }
+        break;
+    }
     default:
         break;
     }
@@ -407,13 +471,28 @@ void MapItem::documentChanged(const ChangeEvent &change)
  */
 void MapItem::mapChanged()
 {
-    for (QGraphicsItem *item : qAsConst(mLayerItems)) {
+    for (QGraphicsItem *item : std::as_const(mLayerItems)) {
         if (TileLayerItem *tli = dynamic_cast<TileLayerItem*>(item))
             tli->syncWithTileLayer();
     }
 
     syncAllObjectItems();
     updateBoundingRect();
+
+    // When this map is part of a world, update that map's rect when necessary
+    const QString &mapFileName = mapDocument()->fileName();
+    if (auto worldDocument = WorldManager::instance().worldForMap(mapFileName)) {
+        World *world = worldDocument->world();
+        if (world->canBeModified()) {
+            const QRect currentRectInWorld = world->mapRect(mapFileName);
+            QRect resizedRect = mapDocument()->renderer()->mapBoundingRect();
+            if (currentRectInWorld.size() != resizedRect.size()) {
+                resizedRect.translate(currentRectInWorld.topLeft());
+                auto undoStack = worldDocument->undoStack();
+                undoStack->push(new SetMapRectCommand(worldDocument.data(), mapFileName, resizedRect));
+            }
+        }
+    }
 }
 
 void MapItem::tileLayerChanged(TileLayer *tileLayer, MapDocument::TileLayerChangeFlags flags)
@@ -435,12 +514,27 @@ void MapItem::layerAdded(Layer *layer)
         mLayerItems.value(sibling)->setZValue(z++);
 
     updateBoundingRect();
+    updateSelectedLayersHighlight();
+}
+
+void MapItem::layerAboutToBeRemoved(GroupLayer *parentLayer, int index)
+{
+    // Fix up the Z value of the items of the siblings, before the layer is removed
+    const auto siblings = parentLayer ? parentLayer->layers()
+                                      : mMapDocument->map()->layers();
+    const Layer *layer = siblings.at(index);
+
+    int z = 0;
+    for (auto sibling : siblings)
+        if (sibling != layer)
+            mLayerItems.value(sibling)->setZValue(z++);
 }
 
 void MapItem::layerRemoved(Layer *layer)
 {
     deleteLayerItems(layer);
     updateBoundingRect();
+    updateSelectedLayersHighlight();
 }
 
 /**
@@ -481,7 +575,11 @@ void MapItem::layerChanged(const LayerChangeEvent &change)
     }
 
     layerItem->setOpacity(layer->opacity() * multiplier);
-    layerItem->setPos(static_cast<MapScene*>(scene())->layerItemPosition(*layer));
+
+    if (layer->isGroupLayer() && (change.properties & LayerChangeEvent::ParallaxFactorProperty))
+        updateLayerPositions();
+    else
+        layerItem->setPos(static_cast<MapScene*>(scene())->layerItemPosition(*layer));
 
     updateBoundingRect();   // possible layer offset change
 }
@@ -524,11 +622,11 @@ void MapItem::imageLayerChanged(ImageLayer *imageLayer)
  */
 void MapItem::adaptToTilesetTileSizeChanges(Tileset *tileset)
 {
-    for (QGraphicsItem *item : qAsConst(mLayerItems))
+    for (QGraphicsItem *item : std::as_const(mLayerItems))
         if (TileLayerItem *tli = dynamic_cast<TileLayerItem*>(item))
             tli->syncWithTileLayer();
 
-    for (MapObjectItem *item : qAsConst(mObjectItems)) {
+    for (MapObjectItem *item : std::as_const(mObjectItems)) {
         const Cell &cell = item->mapObject()->cell();
         if (cell.tileset() == tileset)
             item->syncWithMapObject();
@@ -537,11 +635,11 @@ void MapItem::adaptToTilesetTileSizeChanges(Tileset *tileset)
 
 void MapItem::adaptToTileSizeChanges(Tile *tile)
 {
-    for (QGraphicsItem *item : qAsConst(mLayerItems))
+    for (QGraphicsItem *item : std::as_const(mLayerItems))
         if (TileLayerItem *tli = dynamic_cast<TileLayerItem*>(item))
             tli->syncWithTileLayer();
 
-    for (MapObjectItem *item : qAsConst(mObjectItems)) {
+    for (MapObjectItem *item : std::as_const(mObjectItems)) {
         const Cell &cell = item->mapObject()->cell();
         if (cell.tile() == tile)
             item->syncWithMapObject();
@@ -553,7 +651,7 @@ void MapItem::tileObjectGroupChanged(Tile *tile)
     if (!Preferences::instance()->showTileCollisionShapes())
         return;
 
-    for (MapObjectItem *item : qAsConst(mObjectItems)) {
+    for (MapObjectItem *item : std::as_const(mObjectItems)) {
         const Cell &cell = item->mapObject()->cell();
         if (cell.tile() == tile)
             item->syncWithMapObject();
@@ -632,7 +730,7 @@ void MapItem::objectsIndexChanged(ObjectGroup *objectGroup,
 
 void MapItem::syncAllObjectItems()
 {
-    for (MapObjectItem *item : qAsConst(mObjectItems))
+    for (MapObjectItem *item : std::as_const(mObjectItems))
         item->syncWithMapObject();
 }
 
@@ -641,7 +739,7 @@ void MapItem::setObjectLineWidth(qreal lineWidth)
     mapDocument()->renderer()->setObjectLineWidth(lineWidth);
 
     // Changing the line width can change the size of the object items
-    for (MapObjectItem *item : qAsConst(mObjectItems)) {
+    for (MapObjectItem *item : std::as_const(mObjectItems)) {
         if (item->mapObject()->cell().isEmpty()) {
             item->syncWithMapObject();
             item->update();
@@ -653,7 +751,7 @@ void MapItem::setShowTileObjectOutlines(bool enabled)
 {
     mapDocument()->renderer()->setFlag(ShowTileObjectOutlines, enabled);
 
-    for (MapObjectItem *item : qAsConst(mObjectItems)) {
+    for (MapObjectItem *item : std::as_const(mObjectItems)) {
         if (!item->mapObject()->cell().isEmpty())
             item->update();
     }
@@ -754,27 +852,19 @@ void MapItem::deleteLayerItems(Layer *layer)
 
 void MapItem::updateBoundingRect()
 {
-    QRectF boundingRect;
+    QRect boundingRect = mapDocument()->renderer()->mapBoundingRect();
 
-    for (auto layerItem : qAsConst(mLayerItems))
-        if (layerItem->layer()->isTileLayer())
-            boundingRect |= layerItem->boundingRect().translated(layerItem->layer()->totalOffset());
+    // This rectangle represents the map boundary and as such is unaffected
+    // by layer offsets or image layers.
+    mBorderRectangle->setRect(boundingRect);
 
-    QRectF mapBoundingRect = mapDocument()->renderer()->mapBoundingRect();
-
-    // For fixed-size maps, make the bounding rect at least the size of the map
-    if (!mMapDocument->map()->infinite())
-        boundingRect |= mapBoundingRect;
+    mMapDocument->map()->adjustBoundingRectForOffsetsAndImageLayers(boundingRect);
 
     if (mBoundingRect != boundingRect) {
         prepareGeometryChange();
         mBoundingRect = boundingRect;
         emit boundingRectChanged();
     }
-
-    // This rectangle represents the map boundary and as such is unaffected
-    // by layer offsets.
-    mBorderRectangle->setRect(mapBoundingRect);
 }
 
 void MapItem::updateSelectedLayersHighlight()
@@ -788,7 +878,7 @@ void MapItem::updateSelectedLayersHighlight()
             mDarkRectangle->setParentItem(this);    // avoid automatic deletion
 
             // Restore opacity for all layers
-            for (auto layerItem : qAsConst(mLayerItems))
+            for (auto layerItem : std::as_const(mLayerItems))
                 layerItem->setOpacity(layerItem->layer()->opacity());
         }
 

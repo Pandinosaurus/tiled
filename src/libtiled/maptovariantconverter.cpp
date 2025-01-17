@@ -21,6 +21,7 @@
 
 #include "maptovariantconverter.h"
 
+#include "fileformat.h"
 #include "grouplayer.h"
 #include "imagelayer.h"
 #include "map.h"
@@ -45,10 +46,15 @@ QVariant MapToVariantConverter::toVariant(const Map &map, const QDir &mapDir)
     QVariantMap mapVariant;
 
     mapVariant[QStringLiteral("type")] = QLatin1String("map");
+
+    if (!map.className().isEmpty())
+        mapVariant[QStringLiteral("class")] = map.className();
+
     if (mVersion == 2)
-        mapVariant[QStringLiteral("version")] = QStringLiteral("1.8");
+        mapVariant[QStringLiteral("version")] = FileFormat::versionString();
     else
         mapVariant[QStringLiteral("version")] = 1.1;
+
     mapVariant[QStringLiteral("tiledversion")] = QCoreApplication::applicationVersion();
     mapVariant[QStringLiteral("orientation")] = orientationToString(map.orientation());
     mapVariant[QStringLiteral("renderorder")] = renderOrderToString(map.renderOrder());
@@ -139,7 +145,7 @@ QVariant MapToVariantConverter::toVariant(const ObjectTemplate &objectTemplate,
     mGidMapper.clear();
     if (Tileset *tileset = objectTemplate.object()->cell().tileset()) {
         unsigned firstGid = 1;
-        mGidMapper.insert(firstGid, tileset->sharedPointer());
+        mGidMapper.insert(firstGid, tileset->sharedFromThis());
         objectTemplateVariant[QStringLiteral("tileset")] = toVariant(*tileset, firstGid);
     }
 
@@ -158,7 +164,7 @@ QVariant MapToVariantConverter::toVariant(const Tileset &tileset,
 
         const QString &fileName = tileset.fileName();
         if (!fileName.isEmpty()) {
-            QString source = mDir.relativeFilePath(fileName);
+            const QString source = filePathRelativeTo(mDir, fileName);
             tilesetVariant[QStringLiteral("source")] = source;
 
             // Tileset is external, so no need to write any of the stuff below
@@ -170,13 +176,15 @@ QVariant MapToVariantConverter::toVariant(const Tileset &tileset,
 
         // Include version in external tilesets
         if (mVersion == 2)
-            tilesetVariant[QStringLiteral("version")] = QStringLiteral("1.8");
+            tilesetVariant[QStringLiteral("version")] = FileFormat::versionString();
         else
             tilesetVariant[QStringLiteral("version")] = 1.1;
         tilesetVariant[QStringLiteral("tiledversion")] = QCoreApplication::applicationVersion();
     }
 
     tilesetVariant[QStringLiteral("name")] = tileset.name();
+    if (!tileset.className().isEmpty())
+        tilesetVariant[QStringLiteral("class")] = tileset.className();
     tilesetVariant[QStringLiteral("tilewidth")] = tileset.tileWidth();
     tilesetVariant[QStringLiteral("tileheight")] = tileset.tileHeight();
     tilesetVariant[QStringLiteral("spacing")] = tileset.tileSpacing();
@@ -204,6 +212,12 @@ QVariant MapToVariantConverter::toVariant(const Tileset &tileset,
 
     if (tileset.objectAlignment() != Unspecified)
         tilesetVariant[QStringLiteral("objectalignment")] = alignmentToString(tileset.objectAlignment());
+
+    if (tileset.tileRenderSize() != Tileset::TileSize)
+        tilesetVariant[QStringLiteral("tilerendersize")] = Tileset::tileRenderSizeToString(tileset.tileRenderSize());
+
+    if (tileset.fillMode() != Tileset::Stretch)
+        tilesetVariant[QStringLiteral("fillmode")] = Tileset::fillModeToString(tileset.fillMode());
 
     addProperties(tilesetVariant, tileset.properties());
 
@@ -262,7 +276,7 @@ QVariant MapToVariantConverter::toVariant(const Tileset &tileset,
     const bool includeAllTiles = mVersion != 1 && tileset.anyTileOutOfOrder();
 
     for (const Tile *tile : tileset.tiles()) {
-        const Properties properties = tile->properties();
+        const Properties &properties = tile->properties();
         QVariantMap tileVariant;
 
         if (mVersion == 1) {
@@ -274,18 +288,27 @@ QVariant MapToVariantConverter::toVariant(const Tileset &tileset,
             addProperties(tileVariant, properties);
         }
 
-        if (!tile->type().isEmpty())
-            tileVariant[QStringLiteral("type")] = tile->type();
+        if (!tile->className().isEmpty())
+            tileVariant[FileFormat::classPropertyNameForObject()] = tile->className();
         if (tile->probability() != 1.0)
             tileVariant[QStringLiteral("probability")] = tile->probability();
         if (!tile->imageSource().isEmpty()) {
             const QString rel = toFileReference(tile->imageSource(), mDir);
             tileVariant[QStringLiteral("image")] = rel;
 
-            const QSize tileSize = tile->size();
-            if (!tileSize.isNull()) {
-                tileVariant[QStringLiteral("imagewidth")] = tileSize.width();
-                tileVariant[QStringLiteral("imageheight")] = tileSize.height();
+            const QSize imageSize = tile->image().isNull() ? tile->size()
+                                                           : tile->image().size();
+            if (!imageSize.isNull()) {
+                tileVariant[QStringLiteral("imagewidth")] = imageSize.width();
+                tileVariant[QStringLiteral("imageheight")] = imageSize.height();
+            }
+
+            const QRect &imageRect = tile->imageRect();
+            if (!imageRect.isNull() && imageRect != tile->image().rect() && tileset.isCollection()) {
+                tileVariant[QStringLiteral("x")] = imageRect.x();
+                tileVariant[QStringLiteral("y")] = imageRect.y();
+                tileVariant[QStringLiteral("width")] = imageRect.width();
+                tileVariant[QStringLiteral("height")] = imageRect.height();
             }
         }
         if (tile->objectGroup())
@@ -371,6 +394,8 @@ QVariant MapToVariantConverter::toVariant(const WangSet &wangSet) const
     QVariantMap wangSetVariant;
 
     wangSetVariant[QStringLiteral("name")] = wangSet.name();
+    if (!wangSet.className().isEmpty())
+        wangSetVariant[QStringLiteral("class")] = wangSet.className();
     wangSetVariant[QStringLiteral("type")] = wangSetTypeToString(wangSet.type());
     wangSetVariant[QStringLiteral("tile")] = wangSet.imageTileId();
 
@@ -405,6 +430,8 @@ QVariant MapToVariantConverter::toVariant(const WangColor &wangColor) const
     QVariantMap colorVariant;
     colorVariant[QStringLiteral("color")] = colorToString(wangColor.color());
     colorVariant[QStringLiteral("name")] = wangColor.name();
+    if (!wangColor.className().isEmpty())
+        colorVariant[QStringLiteral("class")] = wangColor.className();
     colorVariant[QStringLiteral("probability")] = wangColor.probability();
     colorVariant[QStringLiteral("tile")] = wangColor.imageId();
     addProperties(colorVariant, wangColor.properties());
@@ -521,12 +548,12 @@ QVariant MapToVariantConverter::toVariant(const MapObject &object) const
 {
     QVariantMap objectVariant;
     const QString &name = object.name();
-    const QString &type = object.type();
+    const QString &className = object.className();
 
     addProperties(objectVariant, object.properties());
 
     if (const ObjectTemplate *objectTemplate = object.objectTemplate()) {
-        QString relativeFileName = mDir.relativeFilePath(objectTemplate->fileName());
+        const QString relativeFileName = filePathRelativeTo(mDir, objectTemplate->fileName());
         objectVariant[QStringLiteral("template")] = relativeFileName;
     }
 
@@ -539,9 +566,8 @@ QVariant MapToVariantConverter::toVariant(const MapObject &object) const
     if (notTemplateInstance || object.propertyChanged(MapObject::NameProperty))
         objectVariant[QStringLiteral("name")] = name;
 
-    if (notTemplateInstance || object.propertyChanged(MapObject::TypeProperty))
-        objectVariant[QStringLiteral("type")] = type;
-
+    if (notTemplateInstance || !className.isEmpty())
+        objectVariant[FileFormat::classPropertyNameForObject()] = className;
 
     if (notTemplateInstance || object.propertyChanged(MapObject::CellProperty))
         if (!object.cell().isEmpty())
@@ -667,6 +693,12 @@ QVariant MapToVariantConverter::toVariant(const ImageLayer &imageLayer) const
     const QString rel = toFileReference(imageLayer.imageSource(), mDir);
     imageLayerVariant[QStringLiteral("image")] = rel;
 
+    const QSize imageSize = imageLayer.image().size();
+    if (!imageSize.isNull()) {
+        imageLayerVariant[QStringLiteral("imagewidth")] = imageSize.width();
+        imageLayerVariant[QStringLiteral("imageheight")] = imageSize.height();
+    }
+
     const QColor transColor = imageLayer.transparentColor();
     if (transColor.isValid())
         imageLayerVariant[QStringLiteral("transparentcolor")] = transColor.name();
@@ -732,9 +764,13 @@ void MapToVariantConverter::addLayerAttributes(QVariantMap &layerVariant,
         layerVariant[QStringLiteral("id")] = layer.id();
 
     layerVariant[QStringLiteral("name")] = layer.name();
+    if (!layer.className().isEmpty())
+        layerVariant[QStringLiteral("class")] = layer.className();
     layerVariant[QStringLiteral("x")] = layer.x();
     layerVariant[QStringLiteral("y")] = layer.y();
     layerVariant[QStringLiteral("visible")] = layer.isVisible();
+    if (layer.isLocked())
+        layerVariant[QStringLiteral("locked")] = true;
     layerVariant[QStringLiteral("opacity")] = layer.opacity();
 
     const QPointF offset = layer.offset();

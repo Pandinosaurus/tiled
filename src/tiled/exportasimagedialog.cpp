@@ -62,9 +62,6 @@ ExportAsImageDialog::ExportAsImageDialog(MapDocument *mapDocument,
 {
     mUi->setupUi(this);
     resize(Utils::dpiScaled(size()));
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-#endif
 
     QPushButton *saveButton = mUi->buttonBox->button(QDialogButtonBox::Save);
     saveButton->setText(tr("Export"));
@@ -179,11 +176,10 @@ void ExportAsImageDialog::accept()
 
     MapRenderer *renderer = mMapDocument->renderer();
 
-    QSize imageSize = renderer->mapBoundingRect().size();
+    QRect boundingRect = renderer->mapBoundingRect();
+    mMapDocument->map()->adjustBoundingRectForOffsetsAndImageLayers(boundingRect);
 
-    QMargins margins = mMapDocument->map()->computeLayerOffsetMargins();
-    imageSize.setWidth(imageSize.width() + margins.left() + margins.right());
-    imageSize.setHeight(imageSize.height() + margins.top() + margins.bottom());
+    QSize imageSize = boundingRect.size();
 
     if (session::useCurrentScale)
         imageSize *= mCurrentScale;

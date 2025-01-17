@@ -12,33 +12,44 @@ Maps, layers, tiles, and objects can all be assigned arbitrary properties.
 Tiled's map format (TMX) is easy to understand and allows multiple tilesets to
 be used in any map. Tilesets can be modified at any time.
 
-[![Build Status](https://api.travis-ci.com/mapeditor/tiled.svg?branch=master&status=passed)](https://travis-ci.com/github/mapeditor/tiled)
+[![Build Packages](https://github.com/mapeditor/tiled/actions/workflows/packages.yml/badge.svg)](https://github.com/mapeditor/tiled/actions/workflows/packages.yml?query=branch%3Amaster+event%3Apush)
 [![Build status](https://ci.appveyor.com/api/projects/status/ceb79jn5cf99y3qd/branch/master?svg=true)](https://ci.appveyor.com/project/bjorn/tiled/branch/master)
 [![Snap](https://snapcraft.io/tiled/badge.svg)](https://snapcraft.io/tiled)
 [![Translation status](https://hosted.weblate.org/widgets/tiled/-/shields-badge.svg)](https://hosted.weblate.org/engage/tiled/?utm_source=widget)
 [![Open Source Helpers](https://www.codetriage.com/mapeditor/tiled/badges/users.svg)](https://www.codetriage.com/mapeditor/tiled)
 
-About the Qt Version
+Installing Tiled
 -------------------------------------------------------------------------------
 
-Tiled was originally written in Java. In 2008, work began to develop a faster,
-better looking, and easier-to-use version of Tiled based on the Qt framework.
-This decision was made as the Qt framework has a greater feature set than is
-offered by the standard Java libraries.
+Tiled is available for all major operating systems and can be downloaded either
+from [GitHub Releases](https://github.com/mapeditor/tiled/releases) or from
+[itch.io](https://thorbjorn.itch.io/tiled). Most Linux distributions also
+package Tiled, but these packages are usually out of date so you might prefer
+to use the AppImage or install Tiled through
+[Flatpak](https://flathub.org/apps/org.mapeditor.Tiled) or
+[snap](https://snapcraft.io/tiled), both of which are official releases.
 
+### Signed Releases for macOS and Windows
 
-Compiling
+macOS builds are signed by the maintainer, Thorbjørn Lindeijer, who registered
+as Apple Developer.
+
+Windows installers are using free code signing provided by
+[SignPath.io](https://signpath.io?utm_source=foundation&utm_medium=github&utm_campaign=tiled),
+and a free code signing certificate by the
+[SignPath Foundation](https://signpath.org?utm_source=foundation&utm_medium=github&utm_campaign=tiled).
+
+Compiling Tiled
 -------------------------------------------------------------------------------
 
-Before you can compile Tiled, you must ensure the Qt (>= 5.6) development
+Before you can compile Tiled, you must ensure the Qt (>= 5.12) development
 libraries have been installed as well as the Qbs build tool:
 
-* On Ubuntu/Debian: `sudo apt install qt5-default libqt5svg5 qttools5-dev-tools zlib1g-dev qtdeclarative5-dev qtdeclarative5-private-dev qbs`
+* On Ubuntu/Debian: `sudo apt install qtbase5-dev libqt5svg5-dev qttools5-dev-tools zlib1g-dev qtdeclarative5-dev qbs`
 * On Fedora:        `sudo dnf builddep tiled`
 * On Arch Linux:    `sudo pacman -S qt qt5-tools qbs`
 * On macOS with [Homebrew](https://brew.sh/):
-  + `brew install qbs`
-  + `brew link qt5 --force`
+  + `brew install qbs` (which automatically pulls in `qt`)
 
 If you want to build the Python plugin, you additionally need to install the
 Python 3 development libraries:
@@ -62,17 +73,16 @@ From the command-line, you may need to set up Qbs before you can build Tiled
 path):
 
     qbs setup-toolchains --detect     # setup toolchains
-    qbs setup-qt --detect             # setup Qt (not needed since Qbs 1.13)
     qbs                               # build Tiled
 
 You can now run Tiled as follows:
 
     qbs run -p tiled
 
-Qt 6
--------------------------------------------------------------------------------
+### Qt 6
 
-For compiling libtiledquick you'll need to install the Vulkan headers:
+For compiling libtiledquick (not built by default) you'll need to install the
+Vulkan headers:
 
 * On Ubuntu/Debian: `sudo apt install libvulkan-dev`
 
@@ -84,7 +94,7 @@ using that IDE. This can be done with the following command:
 
     qbs generate -g visualstudio2017
 
-Installing
+Installing Self-Compiled Tiled
 -------------------------------------------------------------------------------
 
 To install Tiled, run `qbs install` from the terminal. By default, Tiled will

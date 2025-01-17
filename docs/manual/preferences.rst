@@ -72,9 +72,9 @@ Detach templates
     template object files.
 
 Resolve object types and properties
-    Stores effective object type and properties with each object.
+    Stores effective object class and properties with each object.
     Object properties are inherited from a tile (in case of a tile
-    object) and from the default properties of their type.
+    object) and from the members of their class.
 
 Minimize output
     Omits unnecessary whitespace in the output file. This option is supported
@@ -108,7 +108,7 @@ Object line width
 
 .. raw:: html
 
-   <div class="new">New in Tiled 1.5</div>
+   <div class="new new-prev">Since Tiled 1.5</div>
 
 Object selection behavior
     By default the :ref:`select-objects-tool` tool selects objects from any
@@ -136,7 +136,7 @@ Mouse wheel zooms by default
 
 .. raw:: html
 
-   <div class="new">New in Tiled 1.5</div>
+   <div class="new new-prev">Since Tiled 1.5</div>
 
 Middle mouse button uses auto-scrolling
     With this option enabled, the clicking middle mouse button doesn't drag the
@@ -145,7 +145,7 @@ Middle mouse button uses auto-scrolling
 
 .. raw:: html
 
-   <div class="new">New in Tiled 1.5</div>
+   <div class="new new-prev">Since Tiled 1.5</div>
 
 Use smooth scrolling
     This option affects the behavior when scrolling with the arrow keys. When
@@ -204,11 +204,21 @@ available since it is in some cases preferable to the custom style. The
 base color and selection color can't be changed when using this style,
 as they depend on the system.
 
+.. raw:: html
+
+   <div class="new">New in Tiled 1.10</div>
+
+Custom Interface Font
+~~~~~~~~~~~~~~~~~~~~~
+
+Normally the application font defaults to the one defined by the system. If
+you'd like Tiled to use a different font, you can set one here.
+
 Plugins
 -------
 
 Here you can choose which plugins are enabled, as well as opening the
-:doc:`scripted extensions </reference/scripting>` folder.
+:doc:`scripted extensions </manual/scripting>` folder.
 
 Plugins add support for map and/or tileset file formats. Some generic plugins
 are enabled by default, while more specific ones need to be manually enabled.

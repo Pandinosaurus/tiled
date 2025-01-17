@@ -27,7 +27,9 @@
 #include "changewangcolordata.h"
 #include "changewangsetdata.h"
 #include "documentmanager.h"
+#include "editablewangset.h"
 #include "erasetiles.h"
+#include "imagecache.h"
 #include "maintoolbar.h"
 #include "mapdocument.h"
 #include "mapobject.h"
@@ -35,6 +37,7 @@
 #include "objecttemplate.h"
 #include "preferences.h"
 #include "propertiesdock.h"
+#include "scriptmanager.h"
 #include "session.h"
 #include "templatesdock.h"
 #include "tile.h"
@@ -212,7 +215,7 @@ TilesetEditor::TilesetEditor(QObject *parent)
 
     connect(mTileAnimationEditor, &TileAnimationEditor::closed, this, &TilesetEditor::onAnimationEditorClosed);
 
-    connect(mWangDock, &WangDock::currentWangSetChanged, this, &TilesetEditor::currentWangSetChanged);
+    connect(mWangDock, &WangDock::currentWangSetChanged, this, &TilesetEditor::onCurrentWangSetChanged);
     connect(mWangDock, &WangDock::currentWangIdChanged, this, &TilesetEditor::currentWangIdChanged);
     connect(mWangDock, &WangDock::wangColorChanged, this, &TilesetEditor::wangColorChanged);
     connect(mWangDock, &WangDock::addWangSetRequested, this, &TilesetEditor::addWangSet);
@@ -246,6 +249,8 @@ TilesetEditor::TilesetEditor(QObject *parent)
 
     retranslateUi();
     connect(Preferences::instance(), &Preferences::languageChanged, this, &TilesetEditor::retranslateUi);
+
+    updateAddRemoveActions();
 }
 
 void TilesetEditor::saveState()
@@ -269,15 +274,15 @@ void TilesetEditor::restoreState()
 
 void TilesetEditor::addDocument(Document *document)
 {
-    TilesetDocument *tilesetDocument = qobject_cast<TilesetDocument*>(document);
+    auto *tilesetDocument = qobject_cast<TilesetDocument*>(document);
     Q_ASSERT(tilesetDocument);
 
-    TilesetView *view = new TilesetView(mWidgetStack);
+    auto *view = new TilesetView(mWidgetStack);
     view->setTilesetDocument(tilesetDocument);
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
 
-    TilesetModel *tilesetModel = new TilesetModel(tilesetDocument, view);
+    auto *tilesetModel = new TilesetModel(tilesetDocument, view);
     view->setModel(tilesetModel);
 
     connect(tilesetDocument, &TilesetDocument::tileWangSetChanged,
@@ -326,7 +331,7 @@ void TilesetEditor::removeDocument(Document *document)
 
 void TilesetEditor::setCurrentDocument(Document *document)
 {
-    TilesetDocument *tilesetDocument = qobject_cast<TilesetDocument*>(document);
+    auto *tilesetDocument = qobject_cast<TilesetDocument*>(document);
     Q_ASSERT(tilesetDocument || !document);
 
     if (document && DocumentManager::instance()->currentEditor() == this)
@@ -354,11 +359,13 @@ void TilesetEditor::setCurrentDocument(Document *document)
 
     mCurrentTilesetDocument = tilesetDocument;
 
-    if (tilesetDocument) {
+    if (tilesetView) {
         mDynamicWrappingToggle->setChecked(tilesetView->dynamicWrapping());
 
         currentChanged(tilesetView->currentIndex());
         selectionChanged();
+    } else {
+        currentChanged(QModelIndex());
     }
 
     updateAddRemoveActions();
@@ -499,6 +506,38 @@ QAction *TilesetEditor::editWangSetsAction() const
     return mWangDock->toggleViewAction();
 }
 
+EditableWangSet *TilesetEditor::currentWangSet() const
+{
+    return EditableWangSet::get(mWangDock->currentWangSet());
+}
+
+void TilesetEditor::setCurrentWangSet(EditableWangSet *wangSet)
+{
+    if (!wangSet) {
+        ScriptManager::instance().throwNullArgError(0);
+        return;
+    }
+    mWangDock->setCurrentWangSet(wangSet->wangSet());
+}
+
+int TilesetEditor::currentWangColorIndex() const
+{
+    return mWangDock->currentWangColor();
+}
+
+void TilesetEditor::setCurrentWangColorIndex(int newIndex)
+{
+    if (!mWangDock->currentWangSet()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "No current Wang set"));
+        return;
+    }
+    if (newIndex < 0 || newIndex > mWangDock->currentWangSet()->colorCount()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "An invalid index was provided"));
+        return;
+    }
+    mWangDock->setCurrentWangColor(newIndex);
+}
+
 void TilesetEditor::currentWidgetChanged()
 {
     if (!mWidgetStack->currentWidget())
@@ -531,11 +570,12 @@ void TilesetEditor::selectionChanged()
 
 void TilesetEditor::currentChanged(const QModelIndex &index)
 {
-    if (!index.isValid())
-        return;
-
-    auto model = static_cast<const TilesetModel*>(index.model());
-    setCurrentTile(model->tileAt(index));
+    if (index.isValid()) {
+        auto model = static_cast<const TilesetModel*>(index.model());
+        setCurrentTile(model->tileAt(index));
+    } else {
+        setCurrentTile(nullptr);
+    }
 }
 
 void TilesetEditor::indexPressed(const QModelIndex &index)
@@ -707,7 +747,7 @@ void TilesetEditor::addTiles(const QList<QUrl> &urls)
         if (!(dontAskAgain && rememberOption) && hasTileInTileset(url, *tileset)) {
             if (dontAskAgain)
                 continue;
-            QCheckBox *checkBox = new QCheckBox(tr("Apply this action to all tiles"));
+            auto *checkBox = new QCheckBox(tr("Apply this action to all tiles"));
             QMessageBox warning(QMessageBox::Warning,
                         tr("Add Tiles"),
                         tr("Tile \"%1\" already exists in the tileset!").arg(url.toString()),
@@ -722,17 +762,23 @@ void TilesetEditor::addTiles(const QList<QUrl> &urls)
             if (!rememberOption)
                 continue;
         }
-        const QPixmap image(url.toLocalFile());
+        const QPixmap image = ImageCache::loadPixmap(url.toLocalFile());
         if (!image.isNull()) {
             loadedFiles.append(LoadedFile { url, image });
         } else {
             // todo: support lazy loading of selected remote files
+            QMessageBox::StandardButtons buttons =
+                    urls.size() == 1 ? QMessageBox::Ok
+                                     : QMessageBox::Ignore | QMessageBox::Cancel;
+
             QMessageBox warning(QMessageBox::Warning,
                                 tr("Add Tiles"),
                                 tr("Could not load \"%1\"!").arg(url.toString()),
-                                QMessageBox::Ignore | QMessageBox::Cancel,
+                                buttons,
                                 mMainWindow->window());
-            warning.setDefaultButton(QMessageBox::Ignore);
+
+            if (urls.size() > 1)
+                warning.setDefaultButton(QMessageBox::Ignore);
 
             if (warning.exec() != QMessageBox::Ignore)
                 return;
@@ -751,7 +797,7 @@ void TilesetEditor::addTiles(const QList<QUrl> &urls)
     QList<Tile*> tiles;
     tiles.reserve(loadedFiles.size());
 
-    for (LoadedFile &loadedFile : loadedFiles) {
+    for (const LoadedFile &loadedFile : std::as_const(loadedFiles)) {
         Tile *newTile = new Tile(tileset->takeNextTileId(), tileset);
         newTile->setImage(loadedFile.image);
         newTile->setImageSource(loadedFile.imageSource);
@@ -912,28 +958,26 @@ void TilesetEditor::setEditWang(bool editWang)
     }
 }
 
-void TilesetEditor::currentWangSetChanged(WangSet *wangSet)
+void TilesetEditor::onCurrentWangSetChanged(WangSet *wangSet)
 {
-    TilesetView *view = currentTilesetView();
-    if (!view)
-        return;
+    if (TilesetView *view = currentTilesetView())
+        view->setWangSet(wangSet);
 
-    view->setWangSet(wangSet);
+    emit currentWangSetChanged();
 }
 
 void TilesetEditor::currentWangIdChanged(WangId wangId)
 {
-    TilesetView *view = currentTilesetView();
-    if (!view)
-        return;
-
-    view->setWangId(wangId);
+    if (TilesetView *view = currentTilesetView())
+        view->setWangId(wangId);
 }
 
 void TilesetEditor::wangColorChanged(int color)
 {
     if (TilesetView *view = currentTilesetView())
         view->setWangColor(color);
+
+    emit currentWangColorIndexChanged(color);
 }
 
 void TilesetEditor::addWangSet(WangSet::Type type)
@@ -942,7 +986,7 @@ void TilesetEditor::addWangSet(WangSet::Type type)
     if (!tileset)
         return;
 
-    WangSet *wangSet = new WangSet(tileset, QString(), type);
+    auto *wangSet = new WangSet(tileset, QString(), type);
     wangSet->setName(tr("Unnamed Set"));
     wangSet->setColorCount(1);
 
@@ -963,7 +1007,7 @@ void TilesetEditor::duplicateWangSet()
         return;
 
     WangSet *duplicate = wangSet->clone(tileset);
-    duplicate->setName(QCoreApplication::translate("Tiled::MapDocument", "Copy of %1").arg(duplicate->name()));
+    duplicate->setName(nameOfDuplicate(wangSet->name()));
 
     mCurrentTilesetDocument->undoStack()->push(new AddWangSet(mCurrentTilesetDocument,
                                                               duplicate));

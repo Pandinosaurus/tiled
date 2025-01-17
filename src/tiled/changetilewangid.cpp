@@ -25,8 +25,6 @@
 
 #include <QCoreApplication>
 
-#include "qtcompat_p.h"
-
 using namespace Tiled;
 
 ChangeTileWangId::ChangeTileWangId()
@@ -91,7 +89,7 @@ void ChangeTileWangId::redo()
 
     QList<Tile *> changedTiles;
 
-    for (const WangIdChange &wangIdChange : qAsConst(mChanges)) {
+    for (const WangIdChange &wangIdChange : std::as_const(mChanges)) {
         if (Tile *tile = findTile(wangIdChange.tileId))
             changedTiles.append(tile);
         mWangSet->setWangId(wangIdChange.tileId, wangIdChange.to);
@@ -105,12 +103,12 @@ bool ChangeTileWangId::mergeWith(const QUndoCommand *other)
     if (!mMergeable)
         return false;
 
-    const ChangeTileWangId *o = static_cast<const ChangeTileWangId*>(other);
+    auto o = static_cast<const ChangeTileWangId*>(other);
     if (o->mTilesetDocument && !(mTilesetDocument == o->mTilesetDocument &&
                                  mWangSet == o->mWangSet))
         return false;
 
-    // suboptimal, could use a map to remove any unnessesary changes if the
+    // suboptimal, could use a map to remove any unnecessary changes if the
     // same tile has multiple changes.
     mChanges += o->mChanges;
 

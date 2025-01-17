@@ -20,17 +20,42 @@
 
 #pragma once
 
+#include "changevalue.h"
 #include "object.h"
+#include "undocommands.h"
 
 #include <QString>
-#include <QUndoCommand>
 #include <QVector>
 
 namespace Tiled {
 
 class Document;
 
-class ChangeProperties : public QUndoCommand
+class ChangeClassName : public ChangeValue<Object, QString>
+{
+public:
+    /**
+     * Creates an undo command that sets the given \a object's \a className.
+     */
+    ChangeClassName(Document *document,
+                    const QList<Object*> &objects,
+                    const QString &className,
+                    QUndoCommand *parent = nullptr);
+
+    int id() const override { return Cmd_ChangeClassName; }
+
+    void undo() override;
+    void redo() override;
+
+protected:
+    QString getValue(const Object *object) const override;
+    void setValue(Object *object, const QString &type) const override;
+
+private:
+    void emitChangeEvent();
+};
+
+class ChangeProperties : public QUndoCommand, public ClonableUndoCommand
 {
 public:
     /**
@@ -50,6 +75,8 @@ public:
     void undo() override;
     void redo() override;
 
+    ChangeProperties *clone(QUndoCommand *parent) const override;
+
 private:
     void swapProperties();
 
@@ -64,11 +91,10 @@ public:
     /**
      * Constructs a new 'Set Property' command.
      *
-     * @param document     the document owning the objects
-     * @param objects      the objects of which the property should be changed
-     * @param name         the name of the property to be changed
-     * @param value        the new value of the property
-     * @param type         the (new) type ot the property to be changed
+     * @param document      the document owning the objects
+     * @param objects       the objects of which the property should be changed
+     * @param name          the name of the property to be changed
+     * @param value         the new value of the property
      */
     SetProperty(Document *document,
                 const QList<Object*> &objects,
@@ -76,19 +102,48 @@ public:
                 const QVariant &value,
                 QUndoCommand *parent = nullptr);
 
+    /**
+     * Constructs a new 'Set Property' command.
+     *
+     * @param document      the document owning the objects
+     * @param objects       the objects of which the property should be changed
+     * @param path          the path to a property member
+     * @param value         the new value of the property
+     */
+    SetProperty(Document *document,
+                const QList<Object*> &objects,
+                const QStringList &path,
+                const QVariant &value,
+                QUndoCommand *parent = nullptr);
+
+    /**
+     * Constructs a new 'Set Property' command.
+     *
+     * @param document      the document owning the objects
+     * @param objects       the objects of which the property should be changed
+     * @param path          the path to a property member
+     * @param values        the new values of the property, one for each object
+     */
+    SetProperty(Document *document,
+                const QList<Object*> &objects,
+                const QStringList &path,
+                const QVariantList &values,
+                QUndoCommand *parent = nullptr);
+
     void undo() override;
     void redo() override;
 
+    int id() const override { return Cmd_SetProperty; }
+
+    bool mergeWith(const QUndoCommand *other) final;
+
 private:
-    struct ObjectProperty {
-        QVariant previousValue;
-        bool existed;
-    };
-    QVector<ObjectProperty> mProperties;
     Document *mDocument;
     QList<Object*> mObjects;
     QString mName;
-    QVariant mValue;
+    QStringList mPath;
+    QVariantList mValues;
+    QVariantList mPreviousValues;
 };
 
 class RemoveProperty : public QUndoCommand

@@ -23,9 +23,6 @@
 #include "grouplayer.h"
 #include "layermodel.h"
 #include "mapdocument.h"
-#include "map.h"
-
-#include "qtcompat_p.h"
 
 namespace Tiled {
 
@@ -79,7 +76,7 @@ void ReparentLayers::redo()
 
     int index = mIndex;
 
-    for (auto layer : qAsConst(mLayers)) {
+    for (auto layer : std::as_const(mLayers)) {
         UndoInfo undoInfo;
         undoInfo.parent = layer->parentLayer();
         undoInfo.oldIndex = layer->siblingIndex();

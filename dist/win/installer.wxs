@@ -80,17 +80,19 @@
               <Shortcut Id="startmenuTiled" Directory="ProgramMenuFolder" Name="Tiled" WorkingDirectory='INSTALLDIR' Icon="tiled.exe" IconIndex="0" Advertise="yes" />
             </File>
             <File Source="$(var.InstallRoot)\terraingenerator.exe" />
-            <File Source="$(var.InstallRoot)\tiled.dll" />
+            <File Source="$(var.InstallRoot)\libtiled.dll" />
+            <File Source="$(var.InstallRoot)\tilededitor.dll" />
             <File Source="$(var.InstallRoot)\tmxrasterizer.exe" />
             <File Source="$(var.InstallRoot)\tmxviewer.exe" />
             <File Source="$(var.RootDir)\dist\win\qt.conf" />
+            <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Concurrent.dll"/>
             <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Core.dll"/>
             <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Gui.dll"/>
             <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Network.dll"/>
             <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Qml.dll"/>
             <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Svg.dll"/>
             <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)Widgets.dll"/>
-            <?if $(var.QtVersionMajor) = 6 ?>
+            <?if $(var.QtVersionMajor) >= 6 ?>
               <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)OpenGL.dll"/>
               <File Source="$(var.QtDir)\bin\Qt$(var.QtVersionMajor)OpenGLWidgets.dll"/>
             <?endif ?>
@@ -112,18 +114,22 @@
               <?endif?>
             <?endif?>
 
-            <?ifdef OpenSsl102Dir ?>
-              <File Source="$(var.OpenSsl102Dir)\libeay32.dll" />
-              <File Source="$(var.OpenSsl102Dir)\ssleay32.dll" />
-            <?endif?>
+            <!-- OpenSSL is needed for Qt versions older than 6.2,
+                 otherwise rely on the schannel backend -->
+            <?if $(var.QtVersionMajor) < 6 or $(var.QtVersionMinor) < 2 ?>
+              <?ifdef OpenSsl111Dir ?>
+                <?if $(var.Platform) = x64 ?>
+                  <File Source="$(var.OpenSsl111Dir)\libcrypto-1_1-x64.dll" />
+                  <File Source="$(var.OpenSsl111Dir)\libssl-1_1-x64.dll" />
+                <?else?>
+                  <File Source="$(var.OpenSsl111Dir)\libcrypto-1_1.dll" />
+                  <File Source="$(var.OpenSsl111Dir)\libssl-1_1.dll" />
+                <?endif?>
+              <?endif?>
 
-            <?ifdef OpenSsl111Dir ?>
-              <?if $(var.Platform) = x64 ?>
-                <File Source="$(var.OpenSsl111Dir)\libcrypto-1_1-x64.dll" />
-                <File Source="$(var.OpenSsl111Dir)\libssl-1_1-x64.dll" />
-              <?else?>
-                <File Source="$(var.OpenSsl111Dir)\libcrypto-1_1.dll" />
-                <File Source="$(var.OpenSsl111Dir)\libssl-1_1.dll" />
+              <?ifdef OpenSslv3Dir ?>
+                <File Source="$(var.OpenSslv3Dir)\libcrypto-3-x64.dll" />
+                <File Source="$(var.OpenSslv3Dir)\libssl-3-x64.dll" />
               <?endif?>
             <?endif?>
 
@@ -172,6 +178,7 @@
 
                 <File Source="$(var.InstallRoot)\plugins\tiled\tbin.dll" />
                 <File Source="$(var.InstallRoot)\plugins\tiled\tengine.dll" />
+                <File Source="$(var.InstallRoot)\plugins\tiled\tscn.dll" />
                 <File Source="$(var.InstallRoot)\plugins\tiled\yy.dll" />
               </Component>
             </Directory>
@@ -187,6 +194,9 @@
             </Directory>
             <Directory Id="imageFormatPlugins" Name="imageformats">
               <Component Id="ImageFormatPlugins" Guid="{C655A440-9F24-4489-8DB9-5A4EFF6EB5D7}">
+                <?ifdef AsepriteImageFormatPlugin ?>
+                <File Source="$(var.QtDir)\plugins\imageformats\$(var.AsepriteImageFormatPlugin)"/>
+                <?endif?>
                 <File Source="$(var.QtDir)\plugins\imageformats\qgif.dll"/>
                 <File Source="$(var.QtDir)\plugins\imageformats\qjpeg.dll"/>
                 <File Source="$(var.QtDir)\plugins\imageformats\qsvg.dll"/>
@@ -196,13 +206,20 @@
                 <File Source="$(var.QtDir)\plugins\imageformats\qwebp.dll"/>
               </Component>
             </Directory>
-            <?ifdef WindowsVistaStyle ?>
+            <?ifdef WindowsStylePlugin ?>
             <Directory Id="stylePlugins" Name="styles">
               <Component Id="StylePlugins" Guid="{DB5D5DD3-1128-4FE0-A76C-EB7E4069EBFE}">
-                <File Source="$(var.QtDir)\plugins\styles\qwindowsvistastyle.dll"/>
+                <File Source="$(var.QtDir)\plugins\styles\$(var.WindowsStylePlugin)"/>
               </Component>
             </Directory>
             <?endif?>
+            <?if $(var.QtVersionMajor) >= 6 and $(var.QtVersionMinor) >= 2 ?>
+            <Directory Id="tlsPlugins" Name="tls">
+              <Component Id="TlsPlugins" Guid="{98C9FB27-68C9-4B85-AE3B-B59B3735A38E}">
+                <File Source="$(var.QtDir)\plugins\tls\qschannelbackend.dll"/>
+              </Component>
+            </Directory>
+            <?endif ?>
           </Directory>
 
           <Directory Id="dir674F7F6D2030C2EBF39AA06B57EAF368" Name="translations">
@@ -239,7 +256,12 @@
               <File Source="$(var.QtDir)\translations\qt_he.qm"/>
               <File Source="$(var.QtDir)\translations\qt_ja.qm"/>
               <File Source="$(var.QtDir)\translations\qt_pl.qm"/>
-              <File Source="$(var.QtDir)\translations\qt_pt.qm"/>
+              <?if $(var.QtVersionMajor) >= 6 and $(var.QtVersionMinor) >= 2 ?>
+                <File Source="$(var.QtDir)\translations\qt_pt_BR.qm"/>
+                <File Source="$(var.QtDir)\translations\qt_pt_PT.qm"/>
+              <?else ?>
+                <File Source="$(var.QtDir)\translations\qt_pt.qm"/>
+              <?endif ?>
               <File Source="$(var.QtDir)\translations\qt_ru.qm"/>
               <File Source="$(var.QtDir)\translations\qt_sv.qm"/>
               <File Source="$(var.QtDir)\translations\qt_uk.qm"/>
@@ -429,8 +451,11 @@
       <ComponentRef Id='PlatformPlugins' />
       <ComponentRef Id='ImageFormatPlugins' />
       <ComponentRef Id='IconEnginePlugins' />
-      <?ifdef WindowsVistaStyle ?>
-      <ComponentRef Id='StylePlugins' />
+      <?ifdef WindowsStylePlugin ?>
+        <ComponentRef Id='StylePlugins' />
+      <?endif?>
+      <?if $(var.QtVersionMajor) >= 6 and $(var.QtVersionMinor) >= 2 ?>
+        <ComponentRef Id='TlsPlugins' />
       <?endif?>
       <ComponentRef Id='ProgramMenuDir' />
     </Feature>

@@ -29,12 +29,12 @@
 #include "tmxviewer.h"
 
 #include "map.h"
+#include "mapformat.h"
 #include "mapobject.h"
 #include "mapreader.h"
 #include "maprenderer.h"
 #include "objectgroup.h"
 #include "tilelayer.h"
-#include "tileset.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -74,10 +74,8 @@ public:
 
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override
     {
-        const QColor &color = mMapObject->objectGroup()->color();
         p->translate(-pos());
-        mRenderer->drawMapObject(p, mMapObject,
-                                 color.isValid() ? color : Qt::darkGray);
+        mRenderer->drawMapObject(p, mMapObject, mMapObject->effectiveColors());
     }
 
 private:
@@ -196,10 +194,10 @@ bool TmxViewer::viewMap(const QString &fileName)
 
     mRenderer.reset();
 
-    MapReader reader;
-    mMap = reader.readMap(fileName);
+    QString errorString;
+    mMap = Tiled::readMap(fileName, &errorString);
     if (!mMap) {
-        qWarning().noquote() << "Error:" << reader.errorString();
+        qWarning().noquote() << "Error:" << errorString;
         return false;
     }
 

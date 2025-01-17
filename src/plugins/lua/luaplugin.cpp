@@ -52,6 +52,11 @@ using namespace Tiled;
 
 namespace Lua {
 
+static const char* classPropertyNameForObject()
+{
+    return FileFormat::compatibilityVersion() == Tiled_1_9 ? "class" : "type";
+}
+
 class LuaWriter
 {
 public:
@@ -207,9 +212,10 @@ void LuaWriter::writeMap(const Map *map)
     mWriter.writeStartDocument();
     mWriter.writeStartReturnTable();
 
-    mWriter.writeKeyAndValue("version", "1.5");
+    mWriter.writeKeyAndValue("version", FileFormat::versionString());
     mWriter.writeKeyAndValue("luaversion", "5.1");
     mWriter.writeKeyAndValue("tiledversion", QCoreApplication::applicationVersion());
+    mWriter.writeKeyAndValue("class", map->className());
 
     const QString orientation = orientationToString(map->orientation());
     const QString renderOrder = renderOrderToString(map->renderOrder());
@@ -289,7 +295,7 @@ void LuaWriter::writeProperties(const Properties &properties)
 
 static bool includeTile(const Tile *tile)
 {
-    if (!tile->type().isEmpty())
+    if (!tile->className().isEmpty())
         return true;
     if (!tile->properties().isEmpty())
         return true;
@@ -315,7 +321,7 @@ void LuaWriter::writeTileset(const Tileset &tileset,
         mWriter.writeStartReturnTable();
 
         // Include version in external tilesets
-        mWriter.writeKeyAndValue("version", "1.5");
+        mWriter.writeKeyAndValue("version", FileFormat::versionString());
         mWriter.writeKeyAndValue("luaversion", "5.1");
         mWriter.writeKeyAndValue("tiledversion", QCoreApplication::applicationVersion());
     }
@@ -325,7 +331,7 @@ void LuaWriter::writeTileset(const Tileset &tileset,
         mWriter.writeKeyAndValue("firstgid", firstGid);
 
         if (tileset.isExternal()) {
-            const QString rel = mDir.relativeFilePath(tileset.fileName());
+            const QString rel = filePathRelativeTo(mDir, tileset.fileName());
             mWriter.writeKeyAndValue("filename", rel);
 
             // For those exporting their tilesets separately, it could be
@@ -333,7 +339,7 @@ void LuaWriter::writeTileset(const Tileset &tileset,
             // well. For consistency I decided to include this separately from
             // the "filename".
             if (!tileset.exportFileName.isEmpty()) {
-                const QString rel = mDir.relativeFilePath(tileset.exportFileName);
+                const QString rel = filePathRelativeTo(mDir, tileset.exportFileName);
                 mWriter.writeKeyAndValue("exportfilename", rel);
             }
 
@@ -342,9 +348,7 @@ void LuaWriter::writeTileset(const Tileset &tileset,
         }
     }
 
-    /* Include all tileset information even for external tilesets, since the
-     * external reference is generally a .tsx file (in XML format).
-     */
+    mWriter.writeKeyAndValue("class", tileset.className());
     mWriter.writeKeyAndValue("tilewidth", tileset.tileWidth());
     mWriter.writeKeyAndValue("tileheight", tileset.tileHeight());
     mWriter.writeKeyAndValue("spacing", tileset.tileSpacing());
@@ -368,6 +372,8 @@ void LuaWriter::writeTileset(const Tileset &tileset,
         writeColor("backgroundcolor", backgroundColor);
 
     mWriter.writeKeyAndValue("objectalignment", alignmentToString(tileset.objectAlignment()));
+    mWriter.writeKeyAndValue("tilerendersize", Tileset::tileRenderSizeToString(tileset.tileRenderSize()));
+    mWriter.writeKeyAndValue("fillmode", Tileset::fillModeToString(tileset.fillMode()));
 
     const QPoint offset = tileset.tileOffset();
     mWriter.writeStartTable("tileoffset");
@@ -402,16 +408,26 @@ void LuaWriter::writeTileset(const Tileset &tileset,
         mWriter.writeStartTable();
         mWriter.writeKeyAndValue("id", tile->id());
 
-        if (!tile->type().isEmpty())
-            mWriter.writeKeyAndValue("type", tile->type());
+        if (!tile->className().isEmpty()) {
+            mWriter.writeKeyAndValue(classPropertyNameForObject(),
+                                     tile->className());
+        }
 
         if (!tile->properties().isEmpty())
             writeProperties(tile->properties());
 
         if (!tile->imageSource().isEmpty()) {
             const QString src = toFileReference(tile->imageSource(), mDir);
+            const QRect &imageRect = tile->imageRect();
             const QSize tileSize = tile->size();
+
             mWriter.writeKeyAndValue("image", src);
+
+            if (!imageRect.isNull() && imageRect != tile->image().rect()) {
+                mWriter.writeKeyAndValue("x", imageRect.x());
+                mWriter.writeKeyAndValue("y", imageRect.y());
+            }
+
             if (!tileSize.isNull()) {
                 mWriter.writeKeyAndValue("width", tileSize.width());
                 mWriter.writeKeyAndValue("height", tileSize.height());
@@ -452,7 +468,9 @@ void LuaWriter::writeWangSet(const WangSet &wangSet)
     mWriter.writeStartTable();
 
     mWriter.writeKeyAndValue("name", wangSet.name());
+    mWriter.writeKeyAndValue("class", wangSet.className());
     mWriter.writeKeyAndValue("tile", wangSet.imageTileId());
+    mWriter.writeKeyAndValue("wangsettype", wangSetTypeToString(wangSet.type()));
 
     writeProperties(wangSet.properties());
 
@@ -463,6 +481,7 @@ void LuaWriter::writeWangSet(const WangSet &wangSet)
 
         writeColor("color", wangColor.color());
         mWriter.writeKeyAndValue("name", wangColor.name());
+        mWriter.writeKeyAndValue("class", wangColor.className());
         mWriter.writeKeyAndValue("probability", wangColor.probability());
         mWriter.writeKeyAndValue("tile", wangColor.imageId());
 
@@ -702,7 +721,8 @@ void LuaWriter::writeMapObject(const Tiled::MapObject *mapObject)
     mWriter.writeStartTable();
     mWriter.writeKeyAndValue("id", mapObject->id());
     mWriter.writeKeyAndValue("name", mapObject->name());
-    mWriter.writeKeyAndValue("type", mapObject->type());
+    mWriter.writeKeyAndValue(classPropertyNameForObject(),
+                             mapObject->className());
     mWriter.writeKeyAndValue("shape", toString(mapObject->shape()));
 
     mWriter.writeKeyAndValue("x", mapObject->x());
@@ -747,6 +767,7 @@ void LuaWriter::writeLayerProperties(const Layer *layer)
     if (layer->id() != 0)
         mWriter.writeKeyAndValue("id", layer->id());
     mWriter.writeKeyAndValue("name", layer->name());
+    mWriter.writeKeyAndValue("class", layer->className());
     mWriter.writeKeyAndValue("visible", layer->isVisible());
     mWriter.writeKeyAndValue("opacity", layer->opacity());
 

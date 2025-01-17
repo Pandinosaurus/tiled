@@ -22,44 +22,39 @@
 
 #include "addremovetiles.h"
 #include "addremovewangset.h"
-#include "editablemanager.h"
+#include "changeevents.h"
 #include "editabletile.h"
 #include "editablewangset.h"
 #include "scriptimage.h"
 #include "scriptmanager.h"
 #include "tilesetchanges.h"
 #include "tilesetdocument.h"
+#include "tilesetmanager.h"
 #include "tilesetwangsetmodel.h"
 
 #include <QCoreApplication>
 
 namespace Tiled {
 
-EditableTileset::EditableTileset(const QString &name,
-                                 QObject *parent)
-    : EditableAsset(nullptr, nullptr, parent)
+EditableTileset::EditableTileset(const QString &name, QObject *parent)
+    : EditableAsset(nullptr, parent)
     , mTileset(Tileset::create(name, 0, 0))
 {
     setObject(mTileset.data());
 }
 
 EditableTileset::EditableTileset(const Tileset *tileset, QObject *parent)
-    : EditableAsset(nullptr, const_cast<Tileset*>(tileset), parent)
+    : EditableAsset(const_cast<Tileset*>(tileset), parent)
     , mReadOnly(true)
-    , mTileset(tileset->sharedPointer())    // keep alive
+    , mTileset(const_cast<Tileset*>(tileset)->sharedFromThis())    // keep alive
 {
 }
 
 EditableTileset::EditableTileset(TilesetDocument *tilesetDocument,
                                  QObject *parent)
-    : EditableAsset(tilesetDocument, tilesetDocument->tileset().data(), parent)
+    : EditableAsset(tilesetDocument->tileset().data(), parent)
 {
-    connect(tilesetDocument, &Document::fileNameChanged, this, &EditableAsset::fileNameChanged);
-    connect(tilesetDocument, &TilesetDocument::tilesAdded, this, &EditableTileset::attachTiles);
-    connect(tilesetDocument, &TilesetDocument::tilesRemoved, this, &EditableTileset::detachTiles);
-    connect(tilesetDocument, &TilesetDocument::tileObjectGroupChanged, this, &EditableTileset::tileObjectGroupChanged);
-    connect(tilesetDocument->wangSetModel(), &TilesetWangSetModel::wangSetAdded, this, &EditableTileset::wangSetAdded);
-    connect(tilesetDocument->wangSetModel(), &TilesetWangSetModel::wangSetRemoved, this, &EditableTileset::wangSetRemoved);
+    setDocument(tilesetDocument);
 }
 
 EditableTileset::~EditableTileset()
@@ -67,13 +62,24 @@ EditableTileset::~EditableTileset()
     detachTiles(tileset()->tiles());
     detachWangSets(tileset()->wangSets());
 
-    EditableManager::instance().mEditableTilesets.remove(tileset());
+    // Prevent owned object from trying to delete us again
+    if (mTileset)
+        setObject(nullptr);
 }
 
 void EditableTileset::loadFromImage(ScriptImage *image, const QString &source)
 {
+    if (!image) {
+        ScriptManager::instance().throwNullArgError(0);
+        return;
+    }
+
     // WARNING: This function has no undo!
-    tileset()->loadFromImage(image->image(), source);
+    if (tileset()->loadFromImage(image->image(), source))
+        emit TilesetManager::instance()->tilesetImagesChanged(tileset());
+
+    if (auto doc = tilesetDocument())
+        emit doc->tilesetChanged(tileset());
 }
 
 EditableTile *EditableTileset::tile(int id)
@@ -85,24 +91,29 @@ EditableTile *EditableTileset::tile(int id)
         return nullptr;
     }
 
-    return EditableManager::instance().editableTile(this, tile);
+    return EditableTile::get(this, tile);
+}
+
+EditableTile *EditableTileset::findTile(int id)
+{
+    if (auto tile = tileset()->findTile(id))
+        return EditableTile::get(this, tile);
+    return nullptr;
 }
 
 QList<QObject*> EditableTileset::tiles()
 {
-    auto &editableManager = EditableManager::instance();
     QList<QObject*> tiles;
     for (Tile *tile : tileset()->tiles())
-        tiles.append(editableManager.editableTile(this, tile));
+        tiles.append(EditableTile::get(this, tile));
     return tiles;
 }
 
 QList<QObject *> EditableTileset::wangSets()
 {
-    auto &editableManager = EditableManager::instance();
     QList<QObject*> wangSets;
     for (WangSet *wangSet : tileset()->wangSets())
-        wangSets.append(editableManager.editableWangSet(this, wangSet));
+        wangSets.append(EditableWangSet::get(this, wangSet));
     return wangSets;
 }
 
@@ -113,9 +124,8 @@ QList<QObject *> EditableTileset::selectedTiles()
 
     QList<QObject*> selectedTiles;
 
-    auto &editableManager = EditableManager::instance();
     for (Tile *tile : tilesetDocument()->selectedTiles())
-        selectedTiles.append(editableManager.editableTile(this, tile));
+        selectedTiles.append(EditableTile::get(this, tile));
 
     return selectedTiles;
 }
@@ -149,7 +159,7 @@ Tiled::EditableTile *EditableTileset::addTile()
     else
         tileset()->addTiles({ tile });
 
-    return EditableManager::instance().editableTile(this, tile);
+    return EditableTile::get(this, tile);
 }
 
 void EditableTileset::removeTiles(const QList<QObject *> &tiles)
@@ -173,18 +183,17 @@ void EditableTileset::removeTiles(const QList<QObject *> &tiles)
 
 EditableWangSet *EditableTileset::addWangSet(const QString &name, int type)
 {
+    if (checkReadOnly())
+        return nullptr;
+
     auto wangSet = std::make_unique<WangSet>(tileset(), name, static_cast<WangSet::Type>(type));
-    EditableWangSet *editable = nullptr;
 
-    if (auto doc = tilesetDocument()) {
+    if (auto doc = tilesetDocument())
         push(new AddWangSet(doc, wangSet.release()));
-        editable = EditableManager::instance().editableWangSet(this, tileset()->wangSets().last());
-    } else if (!checkReadOnly()) {
+    else
         tileset()->addWangSet(std::move(wangSet));
-        editable = EditableManager::instance().editableWangSet(this, tileset()->wangSets().last());
-    }
 
-    return editable;
+    return EditableWangSet::get(this, tileset()->wangSets().last());
 }
 
 void EditableTileset::removeWangSet(EditableWangSet *editableWangSet)
@@ -198,14 +207,35 @@ void EditableTileset::removeWangSet(EditableWangSet *editableWangSet)
         push(new RemoveWangSet(doc, editableWangSet->wangSet()));
     } else if (!checkReadOnly()) {
         const int index = tileset()->wangSets().indexOf(editableWangSet->wangSet());
-        auto wangSet = tileset()->takeWangSetAt(index);
-        EditableManager::instance().release(std::move(wangSet));
+        EditableWangSet::release(tileset()->takeWangSetAt(index));
     }
 }
 
 TilesetDocument *EditableTileset::tilesetDocument() const
 {
     return static_cast<TilesetDocument*>(document());
+}
+
+QSharedPointer<Document> EditableTileset::createDocument()
+{
+    return TilesetDocumentPtr::create(mTileset);
+}
+
+EditableTileset *EditableTileset::get(Tileset *tileset)
+{
+    if (!tileset)
+        return nullptr;
+
+    if (auto document = TilesetDocument::findDocumentForTileset(tileset->sharedFromThis()))
+        return document->editable();
+
+    auto editable = EditableTileset::find(tileset);
+    if (editable)
+        return editable;
+
+    editable = new EditableTileset(tileset);
+    editable->moveOwnershipToCpp();
+    return editable;
 }
 
 void EditableTileset::setName(const QString &name)
@@ -216,7 +246,7 @@ void EditableTileset::setName(const QString &name)
         tileset()->setName(name);
 }
 
-void EditableTileset::setImage(const QString &imageFilePath)
+void EditableTileset::setImageFileName(const QString &imageFilePath)
 {
     if (isCollection() && tileCount() > 0) {
         ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Can't set the image of an image collection tileset"));
@@ -230,9 +260,7 @@ void EditableTileset::setImage(const QString &imageFilePath)
         push(new ChangeTilesetParameters(doc, parameters));
     } else if (!checkReadOnly()) {
         tileset()->setImageSource(imageFilePath);
-
-        if (!tileSize().isEmpty() && !image().isEmpty())
-            tileset()->loadImage();
+        tileset()->loadImage();
     }
 }
 
@@ -250,10 +278,57 @@ void EditableTileset::setTileSize(QSize size)
         push(new ChangeTilesetParameters(doc, parameters));
     } else if (!checkReadOnly()) {
         tileset()->setTileSize(size);
-
-        if (!tileSize().isEmpty() && !image().isEmpty())
-            tileset()->loadImage();
+        tileset()->initializeTilesetTiles();
     }
+}
+
+void EditableTileset::setTileSpacing(int tileSpacing)
+{
+    if (isCollection() && tileCount() > 0) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Can't set tile spacing on an image collection tileset"));
+        return;
+    }
+
+    if (auto doc = tilesetDocument()) {
+        TilesetParameters parameters(*tileset());
+        parameters.tileSpacing = tileSpacing;
+
+        push(new ChangeTilesetParameters(doc, parameters));
+    } else if (!checkReadOnly()) {
+        tileset()->setTileSpacing(tileSpacing);
+        tileset()->initializeTilesetTiles();
+    }
+}
+
+void EditableTileset::setMargin(int margin)
+{
+    if (isCollection() && tileCount() > 0) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Can't set margin on an image collection tileset"));
+        return;
+    }
+
+    if (auto doc = tilesetDocument()) {
+        TilesetParameters parameters(*tileset());
+        parameters.margin = margin;
+
+        push(new ChangeTilesetParameters(doc, parameters));
+    } else if (!checkReadOnly()) {
+        tileset()->setMargin(margin);
+        tileset()->initializeTilesetTiles();
+    }
+}
+
+void EditableTileset::setColumnCount(int columnCount)
+{
+    if (!isCollection()) {
+        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Can't set column count for image-based tilesets"));
+        return;
+    }
+
+    if (auto doc = tilesetDocument())
+        push(new ChangeTilesetColumnCount(doc, columnCount));
+    else if (!checkReadOnly())
+        tileset()->setColumnCount(columnCount);
 }
 
 void EditableTileset::setObjectAlignment(Alignment alignment)
@@ -262,6 +337,22 @@ void EditableTileset::setObjectAlignment(Alignment alignment)
         push(new ChangeTilesetObjectAlignment(doc, static_cast<Tiled::Alignment>(alignment)));
     else if (!checkReadOnly())
         tileset()->setObjectAlignment(static_cast<Tiled::Alignment>(alignment));
+}
+
+void EditableTileset::setTileRenderSize(TileRenderSize tileRenderSize)
+{
+    if (auto doc = tilesetDocument())
+        push(new ChangeTilesetTileRenderSize(doc, static_cast<Tileset::TileRenderSize>(tileRenderSize)));
+    else if (!checkReadOnly())
+        tileset()->setTileRenderSize(static_cast<Tileset::TileRenderSize>(tileRenderSize));
+}
+
+void EditableTileset::setFillMode(FillMode fillMode)
+{
+    if (auto doc = tilesetDocument())
+        push(new ChangeTilesetFillMode(doc, static_cast<Tileset::FillMode>(fillMode)));
+    else if (!checkReadOnly())
+        tileset()->setFillMode(static_cast<Tileset::FillMode>(fillMode));
 }
 
 void EditableTileset::setTileOffset(QPoint tileOffset)
@@ -289,9 +380,7 @@ void EditableTileset::setTransparentColor(const QColor &color)
         push(new ChangeTilesetParameters(doc, parameters));
     } else if (!checkReadOnly()) {
         tileset()->setTransparentColor(color);
-
-        if (!tileSize().isEmpty() && !image().isEmpty())
-            tileset()->loadImage();
+        tileset()->initializeTilesetTiles();
     }
 }
 
@@ -301,6 +390,34 @@ void EditableTileset::setBackgroundColor(const QColor &color)
         push(new ChangeTilesetBackgroundColor(doc, color));
     else if (!checkReadOnly())
         tileset()->setBackgroundColor(color);
+}
+
+void EditableTileset::setTransformationFlags(Tileset::TransformationFlags flags)
+{
+    if (auto doc = tilesetDocument())
+        push(new ChangeTilesetTransformationFlags(doc, flags));
+    else if (!checkReadOnly())
+        tileset()->setTransformationFlags(flags);
+}
+
+void EditableTileset::setDocument(Document *document)
+{
+    Q_ASSERT(!document || document->type() == Document::TilesetDocumentType);
+
+    if (this->document() == document)
+        return;
+
+    EditableAsset::setDocument(document);
+
+    if (auto doc = tilesetDocument()) {
+        connect(doc, &Document::fileNameChanged, this, &EditableAsset::fileNameChanged);
+        connect(doc, &Document::changed, this, &EditableTileset::documentChanged);
+        connect(doc, &TilesetDocument::tilesAdded, this, &EditableTileset::attachTiles);
+        connect(doc, &TilesetDocument::tilesRemoved, this, &EditableTileset::detachTiles);
+        connect(doc, &TilesetDocument::tileObjectGroupChanged, this, &EditableTileset::tileObjectGroupChanged);
+        connect(doc->wangSetModel(), &TilesetWangSetModel::wangSetAdded, this, &EditableTileset::wangSetAdded);
+        connect(doc->wangSetModel(), &TilesetWangSetModel::wangSetRemoved, this, &EditableTileset::wangSetRemoved);
+    }
 }
 
 bool EditableTileset::tilesFromEditables(const QList<QObject *> &editableTiles, QList<Tile*> &tiles)
@@ -322,20 +439,35 @@ bool EditableTileset::tilesFromEditables(const QList<QObject *> &editableTiles, 
     return true;
 }
 
+void EditableTileset::documentChanged(const ChangeEvent &event)
+{
+    switch (event.type) {
+    case ChangeEvent::DocumentAboutToReload:
+        detachTiles(tileset()->tiles());
+        detachWangSets(tileset()->wangSets());
+
+        setObject(nullptr);
+        break;
+    case ChangeEvent::DocumentReloaded:
+        setObject(tilesetDocument()->tileset().data());
+        break;
+    default:
+        break;
+    }
+}
+
 void EditableTileset::attachTiles(const QList<Tile *> &tiles)
 {
-    const auto &editableManager = EditableManager::instance();
     for (Tile *tile : tiles) {
-        if (EditableTile *editable = editableManager.find(tile))
+        if (auto editable = EditableTile::find(tile))
             editable->attach(this);
     }
 }
 
 void EditableTileset::detachTiles(const QList<Tile *> &tiles)
 {
-    const auto &editableManager = EditableManager::instance();
     for (Tile *tile : tiles) {
-        if (auto editable = editableManager.find(tile)) {
+        if (auto editable = EditableTile::find(tile)) {
             Q_ASSERT(editable->tileset() == this);
             editable->detach();
         }
@@ -344,9 +476,8 @@ void EditableTileset::detachTiles(const QList<Tile *> &tiles)
 
 void EditableTileset::detachWangSets(const QList<WangSet *> &wangSets)
 {
-    const auto &editableManager = EditableManager::instance();
     for (WangSet *wangSet : wangSets) {
-        if (auto editable = editableManager.find(wangSet)) {
+        if (auto editable = EditableWangSet::find(wangSet)) {
             Q_ASSERT(editable->tileset() == this);
             editable->detach();
         }
@@ -357,7 +488,7 @@ void EditableTileset::tileObjectGroupChanged(Tile *tile)
 {
     Q_ASSERT(tile->tileset() == tileset());
 
-    if (auto editable = EditableManager::instance().find(tile))
+    if (auto editable = EditableTile::find(tile))
         if (editable->attachedObjectGroup() != tile->objectGroup())
             editable->detachObjectGroup();
 }
@@ -368,7 +499,7 @@ void EditableTileset::wangSetAdded(Tileset *tileset, int index)
 
     WangSet *wangSet = tileset->wangSet(index);
 
-    if (auto editable = EditableManager::instance().find(wangSet))
+    if (auto editable = EditableWangSet::find(wangSet))
         editable->attach(this);
 }
 

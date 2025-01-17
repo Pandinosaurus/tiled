@@ -23,6 +23,7 @@
 #include "editableasset.h"
 #include "mapdocument.h"
 #include "regionvaluetype.h"
+#include "scriptimage.h"
 
 namespace Tiled {
 
@@ -32,9 +33,10 @@ class AutomappingManager;
 class EditableLayer;
 class EditableMapObject;
 class EditableSelectedArea;
+class EditableTileLayer;
 class EditableTileset;
 
-class EditableMap : public EditableAsset
+class EditableMap final : public EditableAsset
 {
     Q_OBJECT
 
@@ -111,7 +113,8 @@ public:
     explicit EditableMap(std::unique_ptr<Map> map, QObject *parent = nullptr);
     ~EditableMap() override;
 
-    bool isReadOnly() const final;
+    bool isReadOnly() const override;
+    AssetType::Value assetType() const override { return AssetType::TileMap; }
 
     int width() const;
     int height() const;
@@ -160,6 +163,8 @@ public:
     Q_INVOKABLE void autoMap(const QRectF &region, const QString &rulesFile = QString());
     Q_INVOKABLE void autoMap(const Tiled::RegionValueType &region, const QString &rulesFile = QString());
 
+    Q_INVOKABLE Tiled::ScriptImage *toImage(QSize size = QSize()) const;
+
     Q_INVOKABLE QPointF screenToTile(qreal x, qreal y) const;
     Q_INVOKABLE QPointF screenToTile(const QPointF &position) const;
     Q_INVOKABLE QPointF tileToScreen(qreal x, qreal y) const;
@@ -195,10 +200,17 @@ public:
     Map *map() const;
     MapDocument *mapDocument() const;
 
+    QSharedPointer<Document> createDocument() override;
+
 signals:
     void currentLayerChanged();
     void selectedLayersChanged();
     void selectedObjectsChanged();
+
+    void regionEdited(const Tiled::RegionValueType &region, Tiled::EditableTileLayer *layer);
+
+protected:
+    void setDocument(Document *document) override;
 
 private:
     void documentChanged(const ChangeEvent &change);
@@ -208,16 +220,16 @@ private:
     void attachMapObjects(const QList<MapObject*> &mapObjects);
     void detachMapObjects(const QList<MapObject*> &mapObjects);
 
-    void onCurrentLayerChanged(Layer *);
+    void onRegionEdited(const QRegion &region, TileLayer *layer);
 
     MapRenderer *renderer() const;
 
     std::unique_ptr<Map> mDetachedMap;
     mutable std::unique_ptr<MapRenderer> mRenderer;
-    bool mReadOnly;
+    bool mReadOnly = false;
 
-    EditableSelectedArea *mSelectedArea;
-    AutomappingManager *mAutomappingManager;
+    EditableSelectedArea *mSelectedArea = nullptr;
+    AutomappingManager *mAutomappingManager = nullptr;
 };
 
 
@@ -372,5 +384,3 @@ inline MapDocument *EditableMap::mapDocument() const
 }
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::EditableMap*)

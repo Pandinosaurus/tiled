@@ -65,9 +65,12 @@
      <item>
       <layout class="QHBoxLayout" name="horizontalLayout_2">
        <item>
-        <widget class="QToolButton" name="openProjectButton">
+        <widget class="QToolButton" name="recentProjectsButton">
          <property name="text">
-          <string notr="true">Open Project...</string>
+          <string>Recent Projects</string>
+         </property>
+         <property name="popupMode">
+          <enum>QToolButton::InstantPopup</enum>
          </property>
          <property name="toolButtonStyle">
           <enum>Qt::ToolButtonTextOnly</enum>
@@ -75,9 +78,9 @@
         </widget>
        </item>
        <item>
-        <widget class="QToolButton" name="saveProjectButton">
+        <widget class="QToolButton" name="newProjectButton">
          <property name="text">
-          <string notr="true">Save Project As...</string>
+          <string notr="true">New Project...</string>
          </property>
          <property name="toolButtonStyle">
           <enum>Qt::ToolButtonTextOnly</enum>
@@ -92,33 +95,6 @@
          <property name="sizeHint" stdset="0">
           <size>
            <width>40</width>
-           <height>20</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-      </layout>
-     </item>
-     <item>
-      <layout class="QHBoxLayout" name="horizontalLayout_3">
-       <item>
-        <widget class="QToolButton" name="addFolderToProjectButton">
-         <property name="text">
-          <string notr="true">Add Folder to Project...</string>
-         </property>
-         <property name="toolButtonStyle">
-          <enum>Qt::ToolButtonTextOnly</enum>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <spacer name="horizontalSpacer_2">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>88</width>
            <height>20</height>
           </size>
          </property>
@@ -147,7 +123,7 @@
        <item>
         <widget class="QToolButton" name="openFileButton">
          <property name="text">
-          <string>Open File...</string>
+          <string notr="true">Open File...</string>
          </property>
          <property name="toolButtonStyle">
           <enum>Qt::ToolButtonTextOnly</enum>
@@ -241,9 +217,6 @@
        <property name="text">
         <string/>
        </property>
-       <property name="pixmap">
-        <pixmap resource="tiled.qrc">:/images/about-tiled-logo.png</pixmap>
-       </property>
        <property name="alignment">
         <set>Qt::AlignCenter</set>
        </property>
@@ -253,8 +226,6 @@
    </item>
   </layout>
  </widget>
- <resources>
-  <include location="tiled.qrc"/>
- </resources>
+ <resources/>
  <connections/>
 </ui>

@@ -57,6 +57,7 @@ public:
 
 private:
     QRectF mBoundingRect;
+    QString mText;
     QPointF mTextPos;
     const MapObject *mObject;
     QColor mColor;
@@ -85,21 +86,22 @@ public:
     QRectF boundingRect() const override { return QRectF(); }
     void paint(QPainter *, const QStyleOptionGraphicsItem *, QWidget *) override {}
 
+protected:
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
+
 private:
     void changeEvent(const ChangeEvent &event);
-    void propertyAdded(Object *object, const QString &name);
     void propertyRemoved(Object *object, const QString &name);
-    void propertyChanged(Object *object, const QString &name);
     void propertiesChanged(Object *object);
     void selectedObjectsChanged();
     void aboutToBeSelectedObjectsChanged();
     void hoveredMapObjectChanged(MapObject *object, MapObject *previous);
-    void mapChanged();
     void layerAdded(Layer *layer);
     void layerAboutToBeRemoved(GroupLayer *parentLayer, int index);
     void layerChanged(const LayerChangeEvent &event);
     void syncOverlayItems(const QList<MapObject *> &objects);
     void updateItemColors() const;
+    void updateItemColorsForObject(MapObject *mapObject) const;
     void objectsAdded(const QList<MapObject*> &objects);
     void objectsAboutToBeRemoved(const QList<MapObject*> &objects);
     void tilesetTilePositioningChanged(Tileset *tileset);
@@ -108,6 +110,8 @@ private:
     void objectLabelVisibilityChanged();
     void showObjectReferencesChanged();
     void objectLineWidthChanged();
+
+    void sceneFontChanged();
 
     void addRemoveObjectLabels();
     void addRemoveObjectOutlines();

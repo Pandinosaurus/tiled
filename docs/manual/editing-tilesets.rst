@@ -111,8 +111,8 @@ ID
 
    <div class="new new-prev">Since Tiled 1.0</div>
 
-Type
-   This property refers to custom types defined in the :ref:`Object Types Editor <predefining-properties>`.
+Class
+   This property refers to custom classes defined in the :ref:`Custom Types Editor <custom-property-types>`.
    See the section about :ref:`typed-tiles` for more information.
 
 Width and Height
@@ -215,11 +215,11 @@ changing the value in the :guilabel:`Frame Duration` field and then clicking
 :guilabel:`Apply`.
 
 .. |tile-collision-editor-icon|
-   image:: ../../src/tiled/images/48/tile-collision-editor.png
+   image:: ../../src/tiled/resources/images/48/tile-collision-editor.png
       :scale: 50
 
 .. |tile-animation-editor-icon|
-   image:: ../../src/tiled/images/24/animation-edit.png
+   image:: ../../src/tiled/resources/images/24/animation-edit.png
 
 .. _Tiled2Unity: http://www.seanba.com/Tiled2Unity
 .. _Mega Dad Adventures: http://www.seanba.com/megadadadventures.html
@@ -232,17 +232,17 @@ changing the value in the :guilabel:`Frame Duration` field and then clicking
 
    **Terrain Sets**
 
-   - Make it easier to set up terrain (`#1729 <https://github.com/bjorn/tiled/issues/1729>`__)
+   - Make it easier to set up terrain (`#1729 <https://github.com/mapeditor/tiled/issues/1729>`__)
 
    **Tile Collision Editor**
 
-   - Allow setting collisions for multiple tiles at once (`#1322 <https://github.com/bjorn/tiled/issues/1322>`__)
-   - Render tile collision shapes to the tileset view (`#1281 <https://github.com/bjorn/tiled/issues/1281>`__)
+   - Allow setting collisions for multiple tiles at once (`#1322 <https://github.com/mapeditor/tiled/issues/1322>`__)
+   - Render tile collision shapes to the tileset view (`#1281 <https://github.com/mapeditor/tiled/issues/1281>`__)
 
    **Tile Animation Editor**
 
-   - Support multiple named animations per tile (`#986 <https://github.com/bjorn/tiled/issues/986>`__)
-   - Make it easier to define animations spanning multiple tiles (`#811 <https://github.com/bjorn/tiled/issues/811>`__)
+   - Support multiple named animations per tile (`#986 <https://github.com/mapeditor/tiled/issues/986>`__)
+   - Make it easier to define animations spanning multiple tiles (`#811 <https://github.com/mapeditor/tiled/issues/811>`__)
 
    If you like any of these plans, please help me getting around to it
    faster by `sponsoring Tiled development <https://www.mapeditor.org/donate>`__. The

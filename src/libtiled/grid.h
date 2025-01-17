@@ -60,6 +60,9 @@ public:
             mValues(CHUNK_SIZE * CHUNK_SIZE)
         {}
 
+        T &get(int x, int y) { return mValues[x + y * CHUNK_SIZE]; }
+        T &get(QPoint point) { return get(point.x(), point.y()); }
+
         const T &get(int x, int y) const { return mValues.at(x + y * CHUNK_SIZE); }
         const T &get(QPoint point) const { return get(point.x(), point.y()); }
 
@@ -102,6 +105,20 @@ public:
         return get(point.x(), point.y());
     }
 
+    T &add(int x, int y)
+    {
+        Chunk *chunk = findChunk(x, y);
+        if (!chunk)
+            chunk = &this->chunk(x, y);
+
+        return chunk->get(x & CHUNK_MASK, y & CHUNK_MASK);
+    }
+
+    T &add(QPoint point)
+    {
+        return add(point.x(), point.y());
+    }
+
     /**
      * Sets the value at the given coordinates.
      */
@@ -110,15 +127,10 @@ public:
         Chunk *chunk = findChunk(x, y);
 
         if (!chunk) {
-            if (value == T()) {
+            if (value == T())
                 return;
-            } else {
-                mBounds = mBounds.united(QRect(x - (x & CHUNK_MASK),
-                                               y - (y & CHUNK_MASK),
-                                               CHUNK_SIZE,
-                                               CHUNK_SIZE));
+            else
                 chunk = &this->chunk(x, y);
-            }
         }
 
         chunk->set(x & CHUNK_MASK, y & CHUNK_MASK, value);
@@ -144,7 +156,13 @@ public:
     /**
      * Returns the bounding rect of the allocated chunks.
      */
-    QRect bounds() const { return mBounds; }
+    QRect bounds() const
+    {
+        QRect bounds;
+        for (auto it = mChunks.keyBegin(); it != mChunks.keyEnd(); ++it)
+            bounds |= QRect(it->x(), it->y(), CHUNK_SIZE, CHUNK_SIZE);
+        return bounds;
+    }
 
 private:
     Chunk &chunk(int x, int y)
@@ -165,7 +183,6 @@ private:
     }
 
     QHash<QPoint, Chunk> mChunks;
-    QRect mBounds;
 };
 
 } // namespace Tiled

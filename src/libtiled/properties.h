@@ -46,21 +46,34 @@ class TILEDSHARED_EXPORT PropertyValue
     Q_GADGET
     Q_PROPERTY(QVariant value MEMBER value)
     Q_PROPERTY(int typeId MEMBER typeId)
+    Q_PROPERTY(QString typeName READ typeName)
 
 public:
     QVariant value;
     int typeId;
 
     const PropertyType *type() const;
+    QString typeName() const;
+
+    bool operator==(const PropertyValue &o) const
+    { return typeId == o.typeId && value == o.value; }
 };
 
 class TILEDSHARED_EXPORT FilePath
 {
     Q_GADGET
     Q_PROPERTY(QUrl url MEMBER url)
+    Q_PROPERTY(QString localFile READ localFile WRITE setLocalFile)
 
 public:
     QUrl url;
+
+    QString localFile() const { return url.toLocalFile(); }
+    void setLocalFile(const QString &filePath)
+    { url = QUrl::fromLocalFile(filePath); }
+
+    bool operator==(const FilePath &o) const
+    { return url == o.url; }
 
     static QString toString(const FilePath &path);
     static FilePath fromString(const QString &string);
@@ -73,6 +86,9 @@ class TILEDSHARED_EXPORT ObjectRef
 
 public:
     int id;
+
+    bool operator==(const ObjectRef &o) const
+    { return id == o.id; }
 
     static int toInt(const ObjectRef &ref) { return ref.id; }
     static ObjectRef fromInt(int id) { return ObjectRef { id }; }
@@ -148,6 +164,15 @@ using Properties = QVariantMap;
  */
 using AggregatedProperties = QMap<QString, AggregatedPropertyData>;
 
+TILEDSHARED_EXPORT bool setClassPropertyMemberValue(QVariant &classValue,
+                                                    int depth,
+                                                    const QStringList &path,
+                                                    const QVariant &value);
+
+TILEDSHARED_EXPORT bool setPropertyMemberValue(Properties &properties,
+                                               const QStringList &path,
+                                               const QVariant &value);
+
 TILEDSHARED_EXPORT void aggregateProperties(AggregatedProperties &aggregated, const Properties &properties);
 TILEDSHARED_EXPORT void mergeProperties(Properties &target, const Properties &source);
 
@@ -164,6 +189,3 @@ TILEDSHARED_EXPORT QString typeName(const QVariant &value);
 TILEDSHARED_EXPORT void initializeMetatypes();
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::FilePath)
-Q_DECLARE_METATYPE(Tiled::ObjectRef)

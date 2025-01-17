@@ -20,11 +20,55 @@
 
 #include "changeproperties.h"
 
-#include "document.h"
+#include "changeevents.h"
+#include "mapdocument.h"
+#include "tilesetdocument.h"
 
 #include <QCoreApplication>
 
-using namespace Tiled;
+namespace Tiled {
+
+ChangeClassName::ChangeClassName(Document *document,
+                                 const QList<Object *> &objects,
+                                 const QString &className,
+                                 QUndoCommand *parent)
+    : ChangeValue(document, objects, className, parent)
+{
+    setText(QCoreApplication::translate("Undo Commands", "Change Class"));
+}
+
+void ChangeClassName::undo()
+{
+    ChangeValue<Object, QString>::undo();
+    emitChangeEvent();
+}
+
+void ChangeClassName::redo()
+{
+    ChangeValue<Object, QString>::redo();
+    emitChangeEvent();
+}
+
+QString ChangeClassName::getValue(const Object *object) const
+{
+    return object->className();
+}
+
+void ChangeClassName::setValue(Object *object, const QString &className) const
+{
+    object->setClassName(className);
+}
+
+void ChangeClassName::emitChangeEvent()
+{
+    const ObjectsChangeEvent event(objects(), ObjectsChangeEvent::ClassProperty);
+    emit document()->changed(event);
+
+    if (document()->type() == Document::TilesetDocumentType)
+        for (MapDocument *mapDocument : static_cast<TilesetDocument*>(document())->mapDocuments())
+            emit mapDocument->changed(event);
+}
+
 
 ChangeProperties::ChangeProperties(Document *document,
                                    const QString &kind,
@@ -45,14 +89,25 @@ ChangeProperties::ChangeProperties(Document *document,
     }
 }
 
+void ChangeProperties::undo()
+{
+    swapProperties();
+}
+
 void ChangeProperties::redo()
 {
     swapProperties();
 }
 
-void ChangeProperties::undo()
+ChangeProperties *ChangeProperties::clone(QUndoCommand *parent) const
 {
-    swapProperties();
+    auto clone = new ChangeProperties(mDocument,
+                                      QString(),
+                                      mObject,
+                                      mNewProperties,
+                                      parent);
+    clone->setText(text());
+    return clone;
 }
 
 void ChangeProperties::swapProperties()
@@ -68,30 +123,48 @@ SetProperty::SetProperty(Document *document,
                          const QString &name,
                          const QVariant &value,
                          QUndoCommand *parent)
+    : SetProperty(document, objects, QStringList(name), QVariantList { value },
+                  parent)
+{
+}
+
+SetProperty::SetProperty(Document *document,
+                         const QList<Object *> &objects,
+                         const QStringList &path,
+                         const QVariant &value,
+                         QUndoCommand *parent)
+    : SetProperty(document, objects, path, QVariantList { value }, parent)
+{
+}
+
+SetProperty::SetProperty(Document *document,
+                         const QList<Object *> &objects,
+                         const QStringList &path,
+                         const QVariantList &values,
+                         QUndoCommand *parent)
     : QUndoCommand(parent)
     , mDocument(document)
     , mObjects(objects)
-    , mName(name)
-    , mValue(value)
+    , mName(path.first())
+    , mPath(path)
+    , mValues(values)
 {
-    for (Object *obj : objects) {
-        ObjectProperty prop;
-        prop.existed = obj->hasProperty(mName);
-        prop.previousValue = obj->property(mName);
-        mProperties.append(prop);
-    }
+    for (Object *obj : objects)
+        mPreviousValues.append(obj->property(mName));
+
+    const auto fullName = mPath.join(QLatin1Char('.'));
 
     if (mObjects.size() > 1 || mObjects.at(0)->hasProperty(mName))
-        setText(QCoreApplication::translate("Undo Commands", "Set Property"));
+        setText(QCoreApplication::translate("Undo Commands", "Set Property '%1'").arg(fullName));
     else
-        setText(QCoreApplication::translate("Undo Commands", "Add Property"));
+        setText(QCoreApplication::translate("Undo Commands", "Add Property '%1'").arg(fullName));
 }
 
 void SetProperty::undo()
 {
     for (int i = 0; i < mObjects.size(); ++i) {
-        if (mProperties.at(i).existed)
-            mDocument->setProperty(mObjects.at(i), mName, mProperties.at(i).previousValue);
+        if (mPreviousValues.at(i).isValid())
+            mDocument->setProperty(mObjects.at(i), mName, mPreviousValues.at(i));
         else
             mDocument->removeProperty(mObjects.at(i), mName);
     }
@@ -99,9 +172,37 @@ void SetProperty::undo()
 
 void SetProperty::redo()
 {
-    const QList<Object*> &objects = mObjects;
-    for (Object *obj : objects)
-        mDocument->setProperty(obj, mName, mValue);
+    for (int i = 0; i < mObjects.size(); ++i) {
+        auto obj = mObjects.at(i);
+        auto &value = mValues.size() == 1 ? mValues.at(0) : mValues.at(i);
+        mDocument->setPropertyMember(obj, mPath, value);
+    }
+}
+
+bool SetProperty::mergeWith(const QUndoCommand *other)
+{
+    // If the same property is changed of the same object, the commands can
+    // be trivially merged. The value is already changed on the object, and
+    // the old value already remembered on this undo command.
+    auto o = static_cast<const SetProperty*>(other);
+    if (mDocument == o->mDocument && mPath == o->mPath && mObjects == o->mObjects) {
+        mValues = o->mValues;
+
+        bool obsolete = true;
+        for (int i = 0; i < mObjects.size(); ++i) {
+            auto &previousValue = mPreviousValues[i];
+            auto &value = mValues.size() == 1 ? mValues.at(0) : mValues.at(i);
+            if (previousValue != value) {
+                obsolete = false;
+                break;
+            }
+        }
+
+        setObsolete(obsolete);
+
+        return true;
+    }
+    return false;
 }
 
 
@@ -117,7 +218,7 @@ RemoveProperty::RemoveProperty(Document *document,
     for (Object *obj : objects)
         mPreviousValues.append(obj->property(mName));
 
-    setText(QCoreApplication::translate("Undo Commands", "Remove Property"));
+    setText(QCoreApplication::translate("Undo Commands", "Remove Property '%1'").arg(name));
 }
 
 void RemoveProperty::undo()
@@ -128,8 +229,7 @@ void RemoveProperty::undo()
 
 void RemoveProperty::redo()
 {
-    const QList<Object*> &objects = mObjects;
-    for (Object *obj : objects)
+    for (Object *obj : std::as_const(mObjects))
         mDocument->removeProperty(obj, mName);
 }
 
@@ -144,15 +244,23 @@ RenameProperty::RenameProperty(Document *document,
     // Remove the old name from all objects
     new RemoveProperty(document, objects, oldName, this);
 
+    QList<Object*> setOnObjects;
+    QVariantList values;
+
     // Different objects may have different values for the same property,
     // or may not have a value at all.
     for (Object *object : objects) {
         if (!object->hasProperty(oldName))
             continue;
 
-        const QList<Object*> objects { object };
-        const QVariant value = object->property(oldName);
+        setOnObjects.append(object);
+        values.append(object->property(oldName));
+    }
 
-        new SetProperty(document, objects, newName, value, this);
+    if (!setOnObjects.isEmpty()) {
+        new SetProperty(document, setOnObjects,
+                        QStringList { newName }, values, this);
     }
 }
+
+} // namespace Tiled

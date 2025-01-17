@@ -60,9 +60,15 @@ using SharedTileset = QSharedPointer<Tileset>;
  * addTile, insertTiles and removeTiles). These two use-cases are not meant to
  * be mixed.
  */
-class TILEDSHARED_EXPORT Tileset : public Object
+class TILEDSHARED_EXPORT Tileset : public Object, public QEnableSharedFromThis<Tileset>
 {
 public:
+    // Used by TilesetChangeEvent
+    enum Property {
+        FillModeProperty,
+        TileRenderSizeProperty,
+    };
+
     /**
      * The orientation of the tileset determines the projection used in the
      * TileCollisionDock and for the Wang color overlay of the TilesetView.
@@ -73,9 +79,24 @@ public:
     };
 
     /**
-     * Creates a new tileset with the given parameters. Using this function
-     * makes sure the internal weak pointer is initialized, which enables the
-     * sharedPointer() function.
+     * The size to use when rendering tiles from this tileset on a tile layer.
+     */
+    enum TileRenderSize {
+        TileSize,
+        GridSize,
+    };
+
+    /**
+     * The fill mode to use when rendering tiles from this tileset. Only
+     * relevant when the tiles are not rendered at their native size.
+     */
+    enum FillMode {
+        Stretch,
+        PreserveAspectFit
+    };
+
+    /**
+     * Creates a new tileset with the given parameters.
      *
      * @param name        the name of the tileset
      * @param tileWidth   the width of the tiles in the tileset
@@ -83,15 +104,20 @@ public:
      * @param tileSpacing the spacing between the tiles in the tileset image
      * @param margin      the margin around the tiles in the tileset image
      */
-    static SharedTileset create(const QString &name,
-                                int tileWidth,
-                                int tileHeight,
-                                int tileSpacing = 0,
-                                int margin = 0);
+    template <typename... Args>
+    static SharedTileset create(Args && ...arguments)
+    {
+        return SharedTileset::create(std::forward<Args>(arguments)...);
+    }
 
 private:
+    friend SharedTileset;
+
     /**
-     * Private constructor. Use create() instead.
+     * Private constructor.
+     *
+     * Use Tileset::create() instead, which makes sure the internal weak
+     * pointer is initialized, which enables the sharedPointer() function.
      */
     Tileset(QString name, int tileWidth, int tileHeight,
             int tileSpacing = 0, int margin = 0);
@@ -126,6 +152,12 @@ public:
 
     Alignment objectAlignment() const;
     void setObjectAlignment(Alignment objectAlignment);
+
+    TileRenderSize tileRenderSize() const;
+    void setTileRenderSize(TileRenderSize tileRenderSize);
+
+    FillMode fillMode() const;
+    void setFillMode(FillMode fillMode);
 
     QPoint tileOffset() const;
     void setTileOffset(QPoint offset);
@@ -166,6 +198,7 @@ public:
     bool loadFromImage(const QImage &image, const QString &source);
     bool loadFromImage(const QString &fileName);
     bool loadImage();
+    bool initializeTilesetTiles();
 
     SharedTileset findSimilarTileset(const QVector<SharedTileset> &tilesets) const;
 
@@ -173,6 +206,8 @@ public:
     void setImageSource(const QUrl &imageSource);
     void setImageSource(const QString &url);
     QString imageSourceString() const;
+
+    const QPixmap &image() const;
 
     bool isCollection() const;
 
@@ -187,13 +222,14 @@ public:
     void insertWangSet(int index, std::unique_ptr<WangSet> wangSet);
     std::unique_ptr<WangSet> takeWangSetAt(int index);
 
-    Tile *addTile(const QPixmap &image, const QUrl &source = QUrl());
+    Tile *addTile(const QPixmap &image, const QUrl &source = QUrl(), const QRect &rect = QRect());
     void addTiles(const QList<Tile*> &tiles);
     void removeTiles(const QList<Tile *> &tiles);
     void deleteTile(int id);
     QList<int> relocateTiles(const QList<Tile *> &tiles, int location);
 
     bool anyTileOutOfOrder() const;
+    void resetTileOrder();
 
     void setNextTileId(int nextId);
     int nextTileId() const;
@@ -202,11 +238,16 @@ public:
     void setTileImage(Tile *tile,
                       const QPixmap &image,
                       const QUrl &source = QUrl());
+    void setTileImageRect(Tile *tile, const QRect &imageRect);
 
-    SharedTileset sharedPointer() const;
+    /**
+     * @deprecated Only kept around for the Python API!
+     */
+    SharedTileset sharedPointer() const
+    { return const_cast<Tileset*>(this)->sharedFromThis(); }
 
     void setOriginalTileset(const SharedTileset &original);
-    SharedTileset originalTileset() const;
+    SharedTileset originalTileset();
 
     void setStatus(LoadingStatus status);
     void setImageStatus(LoadingStatus status);
@@ -246,12 +287,20 @@ public:
      */
     static Orientation orientationFromString(const QString &);
 
+    static QString tileRenderSizeToString(TileRenderSize tileRenderSize);
+    static TileRenderSize tileRenderSizeFromString(const QString &);
+
+    static QString fillModeToString(FillMode fillMode);
+    static FillMode fillModeFromString(const QString &);
+
 private:
+    void maybeUpdateTileSize(QSize oldSize, QSize newSize);
     void updateTileSize();
 
     QString mName;
     QString mFileName;
     ImageReference mImageReference;
+    QPixmap mImage;
     int mTileWidth;
     int mTileHeight;
     int mTileSpacing;
@@ -259,6 +308,8 @@ private:
     QPoint mTileOffset;
     Alignment mObjectAlignment = Unspecified;
     Orientation mOrientation = Orthogonal;
+    TileRenderSize mTileRenderSize = TileSize;
+    FillMode mFillMode = Stretch;
     QSize mGridSize;
     int mColumnCount = 0;
     int mExpectedColumnCount = 0;
@@ -272,7 +323,6 @@ private:
     QString mFormat;
     TransformationFlags mTransformationFlags;
 
-    QWeakPointer<Tileset> mWeakPointer;
     QWeakPointer<Tileset> mOriginalTileset;
 };
 
@@ -372,6 +422,26 @@ inline Alignment Tileset::objectAlignment() const
 inline void Tileset::setObjectAlignment(Alignment objectAlignment)
 {
     mObjectAlignment = objectAlignment;
+}
+
+inline Tileset::TileRenderSize Tileset::tileRenderSize() const
+{
+    return mTileRenderSize;
+}
+
+inline void Tileset::setTileRenderSize(TileRenderSize tileRenderSize)
+{
+    mTileRenderSize = tileRenderSize;
+}
+
+inline Tileset::FillMode Tileset::fillMode() const
+{
+    return mFillMode;
+}
+
+inline void Tileset::setFillMode(FillMode fillMode)
+{
+    mFillMode = fillMode;
 }
 
 /**
@@ -564,13 +634,19 @@ inline QString Tileset::imageSourceString() const
     return url.isLocalFile() ? url.toLocalFile() : url.toString();
 }
 
+inline const QPixmap &Tileset::image() const
+{
+    return mImage;
+}
+
 /**
  * Returns whether this tileset is a collection of images. In this case, the
- * tileset itself has no image source.
+ * tileset itself has no image source and the tileset image is also not
+ * embedded.
  */
 inline bool Tileset::isCollection() const
 {
-    return imageSource().isEmpty();
+    return imageSource().isEmpty() && image().isNull();
 }
 
 inline const QList<WangSet*> &Tileset::wangSets() const
@@ -611,11 +687,6 @@ inline int Tileset::nextTileId() const
 inline int Tileset::takeNextTileId()
 {
     return mNextTileId++;
-}
-
-inline SharedTileset Tileset::sharedPointer() const
-{
-    return SharedTileset(mWeakPointer);
 }
 
 /**
@@ -668,5 +739,9 @@ inline void Tileset::setTransformationFlags(TransformationFlags flags)
 
 Q_DECLARE_METATYPE(Tiled::Tileset*)
 Q_DECLARE_METATYPE(Tiled::SharedTileset)
+Q_DECLARE_METATYPE(Tiled::Tileset::Orientation)
+Q_DECLARE_METATYPE(Tiled::Tileset::TileRenderSize)
+Q_DECLARE_METATYPE(Tiled::Tileset::FillMode)
+Q_DECLARE_METATYPE(Tiled::Tileset::TransformationFlags)
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(Tiled::Tileset::TransformationFlags)

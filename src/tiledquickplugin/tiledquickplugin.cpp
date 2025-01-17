@@ -20,12 +20,9 @@
 
 #include "tiledquickplugin.h"
 
-#include "map.h"
-#include "mapobject.h"
-#include "objectgroup.h"
-
 #include "mapitem.h"
 #include "maploader.h"
+#include "tiled.h"
 
 #include <qqml.h>
 
@@ -35,12 +32,10 @@ void TiledQuickPlugin::registerTypes(const char *uri)
 {
     // @uri org.mapeditor.Tiled
 
-#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
-    qmlRegisterType<MapRef>();
-#else
     qmlRegisterAnonymousType<MapRef>(uri, 1);
-#endif
 
     qmlRegisterType<MapLoader>(uri, 1, 0, "MapLoader");
     qmlRegisterType<MapItem>(uri, 1, 0, "MapItem");
+
+    Tiled::increaseImageAllocationLimit();
 }

@@ -156,6 +156,7 @@ public:
      * \sa TileLayer::offsetTiles()
      */
     void offsetObjects(const QPointF &offset, const QRectF &bounds,
+                       bool wholeMap,
                        bool wrapX, bool wrapY);
 
     bool canMergeWith(const Layer *other) const override;
@@ -169,7 +170,6 @@ public:
 
     ObjectGroup *clone() const override;
 
-    void resetObjectIds();
     int highestObjectId() const;
 
     // Enable easy iteration over objects with range-based for
@@ -238,3 +238,4 @@ TILEDSHARED_EXPORT ObjectGroup::DrawOrder drawOrderFromString(const QString &);
 } // namespace Tiled
 
 Q_DECLARE_METATYPE(Tiled::ObjectGroup*)
+Q_DECLARE_METATYPE(Tiled::ObjectGroup::DrawOrder)

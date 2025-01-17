@@ -21,51 +21,93 @@
 #include "projectpropertiesdialog.h"
 #include "ui_projectpropertiesdialog.h"
 
+#include "mapformat.h"
 #include "project.h"
+#include "projectdocument.h"
+#include "propertiesview.h"
+#include "tiled.h"
 #include "utils.h"
-#include "varianteditorfactory.h"
-#include "variantpropertymanager.h"
 
-#include <QtGroupPropertyManager>
+#include <QFormLayout>
+#include <QGroupBox>
 
 namespace Tiled {
+
+template<> EnumData enumData<CompatibilityVersion>()
+{
+    return {{
+        QCoreApplication::translate("Tiled::ProjectPropertiesDialog", "Tiled 1.8"),
+        QCoreApplication::translate("Tiled::ProjectPropertiesDialog", "Tiled 1.9"),
+        QCoreApplication::translate("Tiled::ProjectPropertiesDialog", "Tiled 1.10"),
+        QCoreApplication::translate("Tiled::ProjectPropertiesDialog", "Latest"),
+    }, {
+        Tiled_1_8,
+        Tiled_1_9,
+        Tiled_1_10,
+        Tiled_Latest,
+    }};
+}
 
 ProjectPropertiesDialog::ProjectPropertiesDialog(Project &project, QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ProjectPropertiesDialog)
     , mProject(project)
+    , mLocalProjectDocument(new ProjectDocument(std::make_unique<Project>(project), this))
 {
     ui->setupUi(this);
 
-    auto variantPropertyManager = new VariantPropertyManager(this);
-    auto variantEditorFactory = new VariantEditorFactory(this);
-    auto groupPropertyManager = new QtGroupPropertyManager(this);
+    mCompatibilityVersionProperty = new EnumProperty<CompatibilityVersion>(
+                tr("Compatibility Version"),
+                [=] {
+                    return localProject().mCompatibilityVersion;
+                },
+                [=](CompatibilityVersion value) {
+                    localProject().mCompatibilityVersion = value;
+                });
 
-    ui->propertyBrowser->setFactoryForManager<QtVariantPropertyManager>(variantPropertyManager,
-                                                                        variantEditorFactory);
+    mExtensionPathProperty = new UrlProperty(
+                tr("Extensions Directory"),
+                [=] {
+                    return QUrl::fromLocalFile(localProject().mExtensionsPath);
+                },
+                [=](const QUrl &value) {
+                    localProject().mExtensionsPath = value.toLocalFile();
+                });
+    mExtensionPathProperty->setIsDirectory(true);
 
-    auto extensionsGroupProperty = groupPropertyManager->addProperty(tr("Extensions"));
-    mExtensionPathProperty = variantPropertyManager->addProperty(filePathTypeId(), tr("Directory"));
-    mExtensionPathProperty->setValue(project.mExtensionsPath);
-    mExtensionPathProperty->setAttribute(QStringLiteral("directory"), true);
-    extensionsGroupProperty->addSubProperty(mExtensionPathProperty);
-    ui->propertyBrowser->addProperty(extensionsGroupProperty);
+    QString ruleFileFilter = QCoreApplication::translate("File Types", "Automapping Rules files (*.txt)");
+    FormatHelper<MapFormat> helper(FileFormat::ReadWrite, std::move(ruleFileFilter));
 
-    auto filesGroupProperty = groupPropertyManager->addProperty(tr("Files"));
+    mAutomappingRulesFileProperty = new UrlProperty(
+                tr("Automapping rules"),
+                [=] {
+                    return QUrl::fromLocalFile(localProject().mAutomappingRulesFile);
+                },
+                [=](const QUrl &value) {
+                    localProject().mAutomappingRulesFile = value.toLocalFile();
+                });
+    mAutomappingRulesFileProperty->setFilter(helper.filter());
 
-    mObjectTypesFileProperty = variantPropertyManager->addProperty(filePathTypeId(), tr("Object types"));
-    mObjectTypesFileProperty->setValue(project.mObjectTypesFile);
-    mObjectTypesFileProperty->setAttribute(QStringLiteral("filter"),
-                                           QCoreApplication::translate("File Types", "Object Types files (*.xml *.json)"));
-    filesGroupProperty->addSubProperty(mObjectTypesFileProperty);
+    auto generalGroup = new QGroupBox(tr("General"));
+    auto generalLayout = new QFormLayout(generalGroup);
+    generalLayout->addRow(mCompatibilityVersionProperty->name(), mCompatibilityVersionProperty->createEditor(generalGroup));
 
-    mAutomappingRulesFileProperty = variantPropertyManager->addProperty(filePathTypeId(), tr("Automapping rules"));
-    mAutomappingRulesFileProperty->setValue(project.mAutomappingRulesFile);
-    mAutomappingRulesFileProperty->setAttribute(QStringLiteral("filter"),
-                                                QCoreApplication::translate("File Types", "Automapping Rules files (*.txt)"));
-    filesGroupProperty->addSubProperty(mAutomappingRulesFileProperty);
+    auto filesGroup = new QGroupBox(tr("Paths && Files"));
+    auto filesLayout = new QFormLayout(filesGroup);
+    filesLayout->addRow(mExtensionPathProperty->name(), mExtensionPathProperty->createEditor(filesGroup));
+    filesLayout->addRow(mAutomappingRulesFileProperty->name(), mAutomappingRulesFileProperty->createEditor(filesGroup));
 
-    ui->propertyBrowser->addProperty(filesGroupProperty);
+    ui->dialogLayout->insertWidget(0, filesGroup);
+    ui->dialogLayout->insertWidget(0, generalGroup);
+
+    // Don't display the "Custom Properties" header
+    ui->propertiesWidget->customPropertiesGroup()->setName(QString());
+
+    // Tweak margins
+    const auto halfSpacing = Utils::dpiScaled(2);
+    ui->propertiesWidget->propertiesView()->widget()->setContentsMargins(0, halfSpacing, 0, halfSpacing);
+
+    ui->propertiesWidget->setDocument(mLocalProjectDocument);
 }
 
 ProjectPropertiesDialog::~ProjectPropertiesDialog()
@@ -75,11 +117,19 @@ ProjectPropertiesDialog::~ProjectPropertiesDialog()
 
 void ProjectPropertiesDialog::accept()
 {
-    mProject.mExtensionsPath = mExtensionPathProperty->value().toString();
-    mProject.mObjectTypesFile = mObjectTypesFileProperty->value().toString();
-    mProject.mAutomappingRulesFile = mAutomappingRulesFileProperty->value().toString();
+    auto &project = localProject();
+
+    mProject.setProperties(project.properties());
+    mProject.mCompatibilityVersion = project.mCompatibilityVersion;
+    mProject.mExtensionsPath = project.mExtensionsPath;
+    mProject.mAutomappingRulesFile = project.mAutomappingRulesFile;
 
     QDialog::accept();
+}
+
+Project &ProjectPropertiesDialog::localProject()
+{
+    return mLocalProjectDocument->project();
 }
 
 } // namespace Tiled

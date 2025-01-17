@@ -35,8 +35,6 @@
 #include "mapobject.h"
 #include "tile.h"
 
-#include "qtcompat_p.h"
-
 #include <cmath>
 
 using namespace Tiled;
@@ -149,7 +147,7 @@ bool ObjectGroup::referencesTileset(const Tileset *tileset) const
 void ObjectGroup::replaceReferencesToTileset(Tileset *oldTileset,
                                              Tileset *newTileset)
 {
-    for (MapObject *object : qAsConst(mObjects)) {
+    for (MapObject *object : std::as_const(mObjects)) {
         if (object->cell().tileset() == oldTileset) {
             Cell cell = object->cell();
             cell.setTile(newTileset, cell.tileId());
@@ -160,26 +158,25 @@ void ObjectGroup::replaceReferencesToTileset(Tileset *oldTileset,
 
 void ObjectGroup::offsetObjects(const QPointF &offset,
                                 const QRectF &bounds,
+                                bool wholeMap,
                                 bool wrapX, bool wrapY)
 {
     if (offset.isNull())
         return;
 
-    const bool boundsValid = bounds.isValid();
-
-    for (MapObject *object : qAsConst(mObjects)) {
-        const QPointF objectCenter = object->bounds().center();
-        if (boundsValid && !bounds.contains(objectCenter))
+    for (MapObject *object : std::as_const(mObjects)) {
+        const QPointF objectCenter = object->boundsUseTile().center();
+        if (!wholeMap && !bounds.contains(objectCenter))
             continue;
 
         QPointF newCenter(objectCenter + offset);
 
-        if (wrapX && boundsValid) {
+        if (wrapX && bounds.width() > 0) {
             qreal nx = std::fmod(newCenter.x() - bounds.left(), bounds.width());
             newCenter.setX(bounds.left() + (nx < 0 ? bounds.width() + nx : nx));
         }
 
-        if (wrapY && boundsValid) {
+        if (wrapY && bounds.height() > 0) {
             qreal ny = std::fmod(newCenter.y() - bounds.top(), bounds.height());
             newCenter.setY(bounds.top() + (ny < 0 ? bounds.height() + ny : ny));
         }
@@ -213,17 +210,6 @@ Layer *ObjectGroup::mergedWith(const Layer *other) const
 ObjectGroup *ObjectGroup::clone() const
 {
     return initializeClone(new ObjectGroup(mName, mX, mY));
-}
-
-/**
- * Resets the ids of all objects to 0. Mostly used when new ids should be
- * assigned after the object group has been cloned.
- */
-void ObjectGroup::resetObjectIds()
-{
-    const QList<MapObject*> &objects = mObjects;
-    for (MapObject *object : objects)
-        object->resetId();
 }
 
 /**

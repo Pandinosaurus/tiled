@@ -28,7 +28,6 @@ namespace Tiled {
 class LayerOffsetTool : public AbstractTool
 {
     Q_OBJECT
-    Q_INTERFACES(Tiled::AbstractTool)
 
 public:
     explicit LayerOffsetTool(QObject *parent = nullptr);
@@ -44,9 +43,6 @@ public:
     void modifiersChanged(Qt::KeyboardModifiers) override;
 
     void languageChanged() override;
-
-protected slots:
-    void updateEnabledState() override;
 
 protected:
     void mapDocumentChanged(MapDocument *oldDocument,

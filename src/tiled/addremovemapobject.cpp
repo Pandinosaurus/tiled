@@ -28,8 +28,6 @@
 
 #include <QCoreApplication>
 
-#include "qtcompat_p.h"
-
 using namespace Tiled;
 
 AddRemoveMapObjects::AddRemoveMapObjects(Document *document,
@@ -46,7 +44,7 @@ AddRemoveMapObjects::AddRemoveMapObjects(Document *document,
 AddRemoveMapObjects::~AddRemoveMapObjects()
 {
     if (mOwnsObjects)
-        for (const Entry &entry : qAsConst(mEntries))
+        for (const Entry &entry : std::as_const(mEntries))
             delete entry.mapObject;
 }
 

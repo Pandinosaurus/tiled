@@ -71,11 +71,10 @@ properties. There are many kinds of objects:
 
 All objects can be named, in which case their name will show up in a
 label above them (by default only for selected objects). Objects can
-also be given a *type*, which is useful since it can be used to
+also be given a *class*, which is useful since it can be used to
 customize the color of their label and the available :ref:`custom
-properties <predefining-properties>` for this
-object type. For tile objects, the type can be :ref:`inherited from their
-tile <tile-property-inheritance>`.
+properties <custom-classes>` for this object. For tile objects, the class
+can be :ref:`inherited from their tile <tile-property-inheritance>`.
 
 For most map types, objects are positioned in plain pixels. The only
 exception to this are isometric maps (not isometric staggered). For
@@ -132,7 +131,7 @@ groups.
 
 .. raw:: html
 
-   <div class="new">New in Tiled 1.5</div>
+   <div class="new new-prev">Since Tiled 1.5</div>
 
 .. _parallax-factor:
 
@@ -220,9 +219,9 @@ which case it is inherited by all layers in the group.
    There are many ways in which the layers can be made more powerful:
 
    -  Ability to lock individual objects
-      (`#828 <https://github.com/bjorn/tiled/issues/828>`__).
+      (`#828 <https://github.com/mapeditor/tiled/issues/828>`__).
    -  Moving certain map-global properties to the Tile Layer
-      (`#149 <https://github.com/bjorn/tiled/issues/149>`__). It would be
+      (`#149 <https://github.com/mapeditor/tiled/issues/149>`__). It would be
       useful if one map could accommodate layers of different tile sizes
       and maybe even of different orientation.
 

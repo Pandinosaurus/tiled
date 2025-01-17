@@ -41,8 +41,7 @@ ObjectTemplate::ObjectTemplate()
 }
 
 ObjectTemplate::ObjectTemplate(const QString &fileName)
-    : Object(ObjectTemplateType)
-    , mFileName(fileName)
+    : mFileName(fileName)
 {
 }
 
@@ -63,7 +62,7 @@ void ObjectTemplate::setObject(const MapObject *object)
     }
 
     if (tileset)
-        mTileset = tileset->sharedPointer();
+        mTileset = tileset->sharedFromThis();
     else
         mTileset.reset();
 }
@@ -75,7 +74,7 @@ void ObjectTemplate::setObject(std::unique_ptr<MapObject> object)
 
     Tileset *tileset = mObject->cell().tileset();
     if (tileset)
-        mTileset = tileset->sharedPointer();
+        mTileset = tileset->sharedFromThis();
     else
         mTileset.reset();
 }

@@ -22,6 +22,7 @@
 
 #include "changeevents.h"
 #include "changewangsetdata.h"
+#include "mapdocument.h"
 #include "tile.h"
 #include "tileset.h"
 #include "tilesetdocument.h"
@@ -35,6 +36,8 @@ TilesetWangSetModel::TilesetWangSetModel(TilesetDocument *tilesetDocument,
     QAbstractListModel(parent),
     mTilesetDocument(tilesetDocument)
 {
+    connect(tilesetDocument, &TilesetDocument::changed,
+            this, &TilesetWangSetModel::documentChanged);
 }
 
 TilesetWangSetModel::~TilesetWangSetModel()
@@ -72,8 +75,8 @@ QVariant TilesetWangSetModel::data(const QModelIndex &index, int role) const
         case Qt::EditRole:
             return wangSet->name();
         case Qt::DecorationRole:
-            if (Tile *imageTile = wangSet->imageTile())
-                return imageTile->image();
+            if (Tile *tile = wangSet->imageTile())
+                return tile->image().copy(tile->imageRect());
             else
                 return wangSetIcon(wangSet->type());
             break;
@@ -157,13 +160,14 @@ void TilesetWangSetModel::setWangSetName(WangSet *wangSet, const QString &name)
     Q_ASSERT(wangSet->tileset() == mTilesetDocument->tileset().data());
     wangSet->setName(name);
     emitWangSetChange(wangSet);
+    emitToTilesetAndMaps(WangSetChangeEvent(wangSet, WangSetChangeEvent::NameProperty));
 }
 
 void TilesetWangSetModel::setWangSetType(WangSet *wangSet, WangSet::Type type)
 {
     Q_ASSERT(wangSet->tileset() == mTilesetDocument->tileset().data());
     wangSet->setType(type);
-    emit mTilesetDocument->changed(WangSetChangeEvent(wangSet, WangSetChangeEvent::TypeProperty));
+    emitToTilesetAndMaps(WangSetChangeEvent(wangSet, WangSetChangeEvent::TypeProperty));
 }
 
 void TilesetWangSetModel::setWangSetColorCount(WangSet *wangSet, int value)
@@ -171,6 +175,7 @@ void TilesetWangSetModel::setWangSetColorCount(WangSet *wangSet, int value)
     Q_ASSERT(wangSet->tileset() == mTilesetDocument->tileset().data());
     wangSet->setColorCount(value);
     emitWangSetChange(wangSet);
+    emitToTilesetAndMaps(WangSetChangeEvent(wangSet, WangSetChangeEvent::ColorCountProperty));
 }
 
 void TilesetWangSetModel::setWangSetImage(WangSet *wangSet, int tileId)
@@ -185,6 +190,7 @@ void TilesetWangSetModel::insertWangColor(WangSet *wangSet, const QSharedPointer
     Q_ASSERT(wangSet->tileset() == mTilesetDocument->tileset().data());
     wangSet->insertWangColor(wangColor);
     emitWangSetChange(wangSet);
+    emitToTilesetAndMaps(WangSetChangeEvent(wangSet, WangSetChangeEvent::ColorCountProperty));
 }
 
 QSharedPointer<WangColor> TilesetWangSetModel::takeWangColorAt(WangSet *wangSet, int color)
@@ -194,6 +200,7 @@ QSharedPointer<WangColor> TilesetWangSetModel::takeWangColorAt(WangSet *wangSet,
     auto wangColor = wangSet->takeWangColorAt(color);
     emit wangColorRemoved(wangColor.data());
     emitWangSetChange(wangSet);
+    emitToTilesetAndMaps(WangSetChangeEvent(wangSet, WangSetChangeEvent::ColorCountProperty));
     return wangColor;
 }
 
@@ -201,7 +208,32 @@ void TilesetWangSetModel::emitWangSetChange(WangSet *wangSet)
 {
     const QModelIndex index = TilesetWangSetModel::index(wangSet);
     emit dataChanged(index, index);
-    emit wangSetChanged(wangSet->tileset(), index.row());
+    emit wangSetChanged(wangSet);
+}
+
+void TilesetWangSetModel::emitToTilesetAndMaps(const ChangeEvent &event)
+{
+    emit mTilesetDocument->changed(event);
+
+    // todo: this doesn't work reliably because it only reaches maps that use
+    // the tileset, whereas the Properties view can be showing stuff from any
+    // tileset.
+    for (MapDocument *mapDocument : mTilesetDocument->mapDocuments())
+        emit mapDocument->changed(event);
+}
+
+void TilesetWangSetModel::documentChanged(const ChangeEvent &event)
+{
+    switch (event.type) {
+    case ChangeEvent::DocumentAboutToReload:
+        beginResetModel();
+        break;
+    case ChangeEvent::DocumentReloaded:
+        endResetModel();
+        break;
+    default:
+        break;
+    }
 }
 
 #include "moc_tilesetwangsetmodel.cpp"

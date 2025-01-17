@@ -1,4 +1,3 @@
-import qbs 1.0
 import qbs.Probes as Probes
 import qbs.File
 import qbs.Environment
@@ -9,48 +8,36 @@ TiledPlugin {
 
     condition: {
         if (qbs.targetOS.contains("windows"))
-            return File.exists(Environment.getEnv("PYTHONHOME"));
+            return pythonDllProbe.found;
 
-        return pkgConfigPython3Embed.found || pkgConfigPython3.found;
+        return pkgConfigPython3.found;
+    }
+
+    cpp.cxxFlags: {
+        var flags = base
+        if (qbs.toolchain.contains("gcc") && !qbs.toolchain.contains("clang"))
+            flags.push("-Wno-cast-function-type")
+        return flags
     }
 
     Probes.PkgConfigProbe {
         id: pkgConfigPython3
-        name: "python3"
-    }
-
-    Probes.PkgConfigProbe {
-        id: pkgConfigPython3Embed
-        name: "python3-embed"
+        name: project.pythonPkgConfigName
+        minVersion: "3.8"
     }
 
     PythonProbe {
         id: pythonDllProbe
         pythonDir: Environment.getEnv("PYTHONHOME")
-    }
-
-    Properties {
-        condition: pkgConfigPython3Embed.found
-        cpp.cxxFlags: {
-            var flags = pkgConfigPython3Embed.cflags
-            if (qbs.toolchain.contains("gcc") && !qbs.toolchain.contains("clang"))
-                flags.push("-Wno-cast-function-type")
-            return flags
-        }
-        cpp.dynamicLibraries: pkgConfigPython3Embed.libraries
-        cpp.libraryPaths: pkgConfigPython3Embed.libraryPaths
-        cpp.linkerFlags: pkgConfigPython3Embed.linkerFlags
+        minVersion: "3.8"
     }
 
     Properties {
         condition: pkgConfigPython3.found
-        cpp.cxxFlags: {
-            var flags = pkgConfigPython3.cflags
-            if (qbs.toolchain.contains("gcc") && !qbs.toolchain.contains("clang"))
-                flags.push("-Wno-cast-function-type")
-            return flags
-        }
+        cpp.cxxFlags: outer.concat(pkgConfigPython3.compilerFlags)
+        cpp.defines: pkgConfigPython3.defines
         cpp.dynamicLibraries: pkgConfigPython3.libraries
+        cpp.includePaths: pkgConfigPython3.includePaths
         cpp.libraryPaths: pkgConfigPython3.libraryPaths
         cpp.linkerFlags: pkgConfigPython3.linkerFlags
     }

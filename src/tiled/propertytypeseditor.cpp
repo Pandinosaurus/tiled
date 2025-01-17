@@ -1,6 +1,6 @@
 /*
  * propertytypeseditor.cpp
- * Copyright 2016-2021, Thorbjørn Lindeijer <bjorn@lindeijer.nl>>
+ * Copyright 2016-2022, Thorbjørn Lindeijer <bjorn@lindeijer.nl>>
  *
  * This file is part of Tiled.
  *
@@ -21,29 +21,34 @@
 #include "propertytypeseditor.h"
 #include "ui_propertytypeseditor.h"
 
-#include "addpropertydialog.h"
-#include "custompropertieshelper.h"
-#include "object.h"
+#include "colorbutton.h"
+#include "objecttypes.h"
 #include "preferences.h"
 #include "project.h"
 #include "projectmanager.h"
+#include "propertiesview.h"
 #include "propertytypesmodel.h"
+#include "savefile.h"
+#include "session.h"
 #include "utils.h"
-#include "varianteditorfactory.h"
-#include "variantpropertymanager.h"
+#include "variantmapproperty.h"
 
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QInputDialog>
+#include <QJsonDocument>
+#include <QMenu>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QScopedValueRollback>
 #include <QStringListModel>
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
+#include <QStylePainter>
+#endif
 #include <QToolBar>
-
-#include <QtTreePropertyBrowser>
-
-#include "qtcompat_p.h"
 
 namespace Tiled {
 
@@ -55,17 +60,86 @@ static QToolBar *createSmallToolBar(QWidget *parent)
     return toolBar;
 }
 
+static bool confirm(const QString &title, const QString& text, QWidget *parent)
+{
+    return QMessageBox::warning(parent, title, text,
+                                QMessageBox::Yes | QMessageBox::No,
+                                QMessageBox::No) == QMessageBox::Yes;
+}
+
+class DropDownPushButton : public QPushButton
+{
+public:
+    using QPushButton::QPushButton;
+
+    QSize sizeHint() const override
+    {
+        QStyleOptionButton option;
+        initStyleOption(&option);
+
+        QSize hint = QPushButton::sizeHint();
+        hint.rwidth() += style()->pixelMetric(QStyle::PM_MenuButtonIndicator, &option, this);
+        return hint;
+    }
+
+protected:
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
+    void paintEvent(QPaintEvent *) override
+    {
+        QStyleOptionButton option;
+        initStyleOption(&option);
+
+        QStylePainter p(this);
+        p.drawControl(QStyle::CE_PushButton, option);
+    }
+
+    void initStyleOption(QStyleOptionButton *option) const
+#else
+    void initStyleOption(QStyleOptionButton *option) const override
+#endif
+    {
+        QPushButton::initStyleOption(option);
+        option->features |= QStyleOptionButton::HasMenu;
+    }
+};
+
+
+PropertyTypesFilter::PropertyTypesFilter(const QString &lastPath)
+    : propertyTypesFilter(QCoreApplication::translate("File Types", "Custom Types files (*.json)"))
+    , objectTypesJsonFilter(QCoreApplication::translate("File Types", "Object Types JSON (*.json)"))
+    , objectTypesXmlFilter(QCoreApplication::translate("File Types", "Object Types XML (*.xml)"))
+{
+    filters = QStringList { propertyTypesFilter, objectTypesJsonFilter, objectTypesXmlFilter }.join(QStringLiteral(";;"));
+    selectedFilter = lastPath.endsWith(QLatin1String(".xml"), Qt::CaseInsensitive) ? objectTypesXmlFilter
+                                                                                   : propertyTypesFilter;
+}
+
+
 PropertyTypesEditor::PropertyTypesEditor(QWidget *parent)
     : QDialog(parent)
     , mUi(new Ui::PropertyTypesEditor)
     , mPropertyTypesModel(new PropertyTypesModel(this))
+    , mDetailsLayout(new QFormLayout)
     , mValuesModel(new QStringListModel(this))
 {
     mUi->setupUi(this);
 
+    mDetailsLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
     resize(Utils::dpiScaled(size()));
 
     mUi->propertyTypesView->setModel(mPropertyTypesModel);
+    mUi->horizontalLayout->addLayout(mDetailsLayout);
+
+    mFlagsWithNames = {
+        { ClassPropertyType::MapClass,          tr("Map") },
+        { ClassPropertyType::LayerClass,        tr("Layer") },
+        { ClassPropertyType::MapObjectClass,    tr("Object") },
+        { ClassPropertyType::TileClass,         tr("Tile") },
+        { ClassPropertyType::TilesetClass,      tr("Tileset") },
+        { ClassPropertyType::WangColorClass,    tr("Terrain") },
+        { ClassPropertyType::WangSetClass,      tr("Terrain Set") },
+    };
 
     mAddEnumPropertyTypeAction = new QAction(this);
     mAddClassPropertyTypeAction = new QAction(this);
@@ -75,6 +149,8 @@ PropertyTypesEditor::PropertyTypesEditor(QWidget *parent)
     mAddMemberAction = new QAction(this);
     mRemoveMemberAction = new QAction(this);
     mRenameMemberAction = new QAction(this);
+    mExportAction = new QAction(this);
+    mImportAction = new QAction(this);
 
     QIcon addIcon(QStringLiteral(":/images/22/add.png"));
     QIcon removeIcon(QStringLiteral(":/images/22/remove.png"));
@@ -112,6 +188,12 @@ PropertyTypesEditor::PropertyTypesEditor(QWidget *parent)
     auto stretch = new QWidget;
     stretch->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
+    QToolBar *importExportToolBar = createSmallToolBar(this);
+    importExportToolBar->addWidget(stretch);
+    importExportToolBar->addAction(mImportAction);
+    importExportToolBar->addAction(mExportAction);
+    mUi->layout->insertWidget(0, importExportToolBar);
+
     QToolBar *propertyTypesToolBar = createSmallToolBar(this);
     propertyTypesToolBar->addAction(mAddEnumPropertyTypeAction);
     propertyTypesToolBar->addAction(mAddClassPropertyTypeAction);
@@ -128,7 +210,7 @@ PropertyTypesEditor::PropertyTypesEditor(QWidget *parent)
     connect(mAddClassPropertyTypeAction, &QAction::triggered,
             this, [this] { addPropertyType(PropertyType::PT_Class); });
     connect(mRemovePropertyTypeAction, &QAction::triggered,
-            this, &PropertyTypesEditor::removeSelectedPropertyTypes);
+            this, &PropertyTypesEditor::removeSelectedPropertyType);
 
     connect(mAddValueAction, &QAction::triggered,
                 this, &PropertyTypesEditor::addValue);
@@ -140,7 +222,7 @@ PropertyTypesEditor::PropertyTypesEditor(QWidget *parent)
     connect(mRemoveMemberAction, &QAction::triggered,
             this, &PropertyTypesEditor::removeMember);
     connect(mRenameMemberAction, &QAction::triggered,
-            this, &PropertyTypesEditor::renameMember);
+            this, &PropertyTypesEditor::renameSelectedMember);
 
     connect(mPropertyTypesModel, &PropertyTypesModel::nameChanged,
             this, &PropertyTypesEditor::propertyTypeNameChanged);
@@ -158,9 +240,14 @@ PropertyTypesEditor::PropertyTypesEditor(QWidget *parent)
     connect(mValuesModel, &QAbstractItemModel::rowsRemoved,
             this, &PropertyTypesEditor::valuesChanged);
 
+    connect(mImportAction, &QAction::triggered,
+            this, &PropertyTypesEditor::importPropertyTypes);
+    connect(mExportAction, &QAction::triggered,
+            this, &PropertyTypesEditor::exportPropertyTypes);
+
     Preferences *prefs = Preferences::instance();
 
-    auto &project = ProjectManager::instance()->project();
+    const auto &project = ProjectManager::instance()->project();
     mPropertyTypesModel->setPropertyTypes(project.propertyTypes());
 
     connect(prefs, &Preferences::propertyTypesChanged,
@@ -205,6 +292,11 @@ void PropertyTypesEditor::retranslateUi()
     mAddMemberAction->setText(tr("Add Member"));
     mRemoveMemberAction->setText(tr("Remove Member"));
     mRenameMemberAction->setText(tr("Rename Member"));
+
+    mExportAction->setText(tr("Export..."));
+    mExportAction->setToolTip(tr("Export Types"));
+    mImportAction->setText(tr("Import..."));
+    mImportAction->setToolTip(tr("Import Types"));
 }
 
 void PropertyTypesEditor::addPropertyType(PropertyType::Type type)
@@ -229,20 +321,30 @@ void PropertyTypesEditor::selectedPropertyTypesChanged()
     updateDetails();
 }
 
-void PropertyTypesEditor::removeSelectedPropertyTypes()
+void PropertyTypesEditor::removeSelectedPropertyType()
 {
     // Cancel potential editor first, since letting it apply can cause
     // reordering of the types in setData, which would cause the wrong types to
     // get removed.
     mUi->propertyTypesView->closePersistentEditor(mUi->propertyTypesView->currentIndex());
 
-    const QItemSelectionModel *sm = mUi->propertyTypesView->selectionModel();
-    mPropertyTypesModel->removePropertyTypes(sm->selectedRows());
+    const QModelIndex selectedIndex = selectedPropertyTypeIndex();
+    const auto *propertyType = mPropertyTypesModel->propertyTypeAt(selectedIndex);
+    if (!propertyType)
+        return;
+
+    if (!confirm(tr("Remove Type"),
+                 tr("Are you sure you want to remove the type '%1'? This action cannot be undone.")
+                 .arg(propertyType->name), this)) {
+        return;
+    }
+
+    mPropertyTypesModel->removePropertyTypes({ selectedIndex });
 }
 
 /**
  * Returns the index of the currently selected property type, or an invalid
- * index if no or multiple property types are selected.
+ * index if no or multiple types are selected.
  */
 QModelIndex PropertyTypesEditor::selectedPropertyTypeIndex() const
 {
@@ -256,10 +358,21 @@ PropertyType *PropertyTypesEditor::selectedPropertyType() const
     return mPropertyTypesModel->propertyTypeAt(selectedPropertyTypeIndex());
 }
 
-void PropertyTypesEditor::currentMemberItemChanged(QtBrowserItem *item)
+ClassPropertyType *PropertyTypesEditor::selectedClassPropertyType() const
 {
-    mRemoveMemberAction->setEnabled(item);
-    mRenameMemberAction->setEnabled(item);
+    PropertyType *propertyType = selectedPropertyType();
+    if (!propertyType || !propertyType->isClass())
+        return nullptr;
+
+    return static_cast<ClassPropertyType*>(propertyType);
+}
+
+void PropertyTypesEditor::selectedMembersChanged()
+{
+    const auto properties = mMembersView->selectedProperties();
+    const bool singlePropertySelected = properties.size() == 1;
+    mRemoveMemberAction->setEnabled(singlePropertySelected);
+    mRenameMemberAction->setEnabled(singlePropertySelected);
 }
 
 void PropertyTypesEditor::propertyTypeNameChanged(const QModelIndex &index, const PropertyType &type)
@@ -274,7 +387,7 @@ void PropertyTypesEditor::propertyTypeNameChanged(const QModelIndex &index, cons
 void PropertyTypesEditor::applyMemberToSelectedType(const QString &name, const QVariant &value)
 {
     PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Class)
+    if (!propertyType || !propertyType->isClass())
         return;
 
     auto &classType = static_cast<ClassPropertyType&>(*propertyType);
@@ -298,7 +411,7 @@ void PropertyTypesEditor::propertyTypesChanged()
     if (mSettingPrefPropertyTypes)
         return;
 
-    auto &project = ProjectManager::instance()->project();
+    const auto &project = ProjectManager::instance()->project();
     mPropertyTypesModel->setPropertyTypes(project.propertyTypes());
 
     selectedPropertyTypesChanged();
@@ -310,7 +423,7 @@ void PropertyTypesEditor::setStorageType(EnumPropertyType::StorageType storageTy
         return;
 
     PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Enum)
+    if (!propertyType || !propertyType->isEnum())
         return;
 
     auto &enumType = static_cast<EnumPropertyType&>(*propertyType);
@@ -327,12 +440,17 @@ void PropertyTypesEditor::setValuesAsFlags(bool flags)
         return;
 
     PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Enum)
+    if (!propertyType || !propertyType->isEnum())
         return;
 
     auto &enumType = static_cast<EnumPropertyType&>(*propertyType);
     if (enumType.valuesAsFlags == flags)
         return;
+
+    if (flags && !checkValueCount(enumType.values.count())) {
+        mValuesAsFlagsCheckBox->setChecked(false);
+        return;
+    }
 
     enumType.valuesAsFlags = flags;
     applyPropertyTypes();
@@ -357,14 +475,19 @@ static QString nextValueText(const EnumPropertyType &propertyType)
 void PropertyTypesEditor::addValue()
 {
     const PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Enum)
+    if (!propertyType || !propertyType->isEnum())
         return;
 
+    const auto &enumType = *static_cast<const EnumPropertyType*>(propertyType);
     const int row = mValuesModel->rowCount();
+
+    if (enumType.valuesAsFlags && !checkValueCount(row + 1))
+        return;
+
     if (!mValuesModel->insertRow(row))
         return;
 
-    const QString valueText = nextValueText(*static_cast<const EnumPropertyType*>(propertyType));
+    const QString valueText = nextValueText(enumType);
 
     const auto valueIndex = mValuesModel->index(row);
     mValuesView->setCurrentIndex(valueIndex);
@@ -374,22 +497,93 @@ void PropertyTypesEditor::addValue()
 
 void PropertyTypesEditor::removeValues()
 {
+    PropertyType *propertyType = selectedPropertyType();
+    if (!propertyType || !propertyType->isEnum())
+        return;
+
+    if (!confirm(tr("Remove Values"),
+                 tr("Are you sure you want to remove the selected values from enum '%1'? This action cannot be undone.")
+                 .arg(propertyType->name), this)) {
+        return;
+    }
+
     const QItemSelection selection = mValuesView->selectionModel()->selection();
     for (const QItemSelectionRange &range : selection)
         mValuesModel->removeRows(range.top(), range.height());
 }
 
+bool PropertyTypesEditor::checkValueCount(int count)
+{
+    if (count > 31) {
+        QMessageBox::critical(this,
+                              tr("Too Many Values"),
+                              tr("Too many values for enum with values stored as flags. Maximum number of bit flags is %1.").arg(31));
+        return false;
+    }
+    return true;
+}
+
+void PropertyTypesEditor::openClassOfPopup()
+{
+    ClassPropertyType *classType = selectedClassPropertyType();
+    if (!classType)
+        return;
+
+    QFrame *popup = new QFrame(this, Qt::Popup);
+    popup->setAttribute(Qt::WA_DeleteOnClose);
+    popup->setFrameStyle(QFrame::StyledPanel | QFrame::Plain);
+
+    QVBoxLayout *layout = new QVBoxLayout(popup);
+    const int space = Utils::dpiScaled(4);
+    layout->setSpacing(space);
+    layout->setContentsMargins(space, space, space, space);
+
+    for (auto &entry : mFlagsWithNames) {
+        auto checkBox = new QCheckBox(entry.name);
+        checkBox->setChecked(classType->usageFlags & entry.flag);
+        layout->addWidget(checkBox);
+
+        connect(checkBox, &QCheckBox::toggled,
+                this, [this, flag = entry.flag] (bool checked) {
+            setUsageFlags(flag, checked);
+        });
+    }
+
+    // Focus the first checkbox for convenient keyboard navigation
+    layout->itemAt(0)->widget()->setFocus();
+
+    const QSize size = popup->sizeHint();
+    popup->setGeometry(Utils::popupGeometry(mClassOfButton, size));
+    popup->show();
+
+    connect(popup, &QWidget::destroyed, this, [this] {
+        mClassOfButton->setDown(false);
+    });
+}
+
 void PropertyTypesEditor::openAddMemberDialog()
 {
     const PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Class)
+    if (!propertyType || !propertyType->isClass())
         return;
 
-    AddPropertyDialog dialog(static_cast<const ClassPropertyType*>(propertyType), this);
-    dialog.setWindowTitle(tr("Add Member"));
+    if (!mAddValueProperty) {
+        mAddValueProperty = new AddValueProperty(mMembersProperty);
+        mAddValueProperty->setPlaceholderText(tr("Member name"));
+        mAddValueProperty->setParentClassType(static_cast<const ClassPropertyType*>(propertyType));
 
-    if (dialog.exec() == AddPropertyDialog::Accepted)
-        addMember(dialog.propertyName(), QVariant(dialog.propertyValue()));
+        connect(mAddValueProperty, &Property::addRequested, this, [this] {
+            addMember(mAddValueProperty->name(), mAddValueProperty->value());
+            mMembersProperty->deleteProperty(mAddValueProperty);
+        });
+        connect(mAddValueProperty, &Property::removeRequested, this, [this] {
+            mMembersProperty->deleteProperty(mAddValueProperty);
+        });
+
+        mMembersProperty->addProperty(mAddValueProperty);
+    }
+
+    mMembersView->focusProperty(mAddValueProperty, PropertiesView::FocusLabel);
 }
 
 void PropertyTypesEditor::addMember(const QString &name, const QVariant &value)
@@ -397,97 +591,225 @@ void PropertyTypesEditor::addMember(const QString &name, const QVariant &value)
     if (name.isEmpty())
         return;
 
-    applyMemberToSelectedType(name, value);
-    updateDetails();
-    editMember(name);
-}
-
-void PropertyTypesEditor::editMember(const QString &name)
-{
-    QtVariantProperty *property = mPropertiesHelper->property(name);
-    if (!property)
+    PropertyType *propertyType = selectedPropertyType();
+    if (!propertyType || !propertyType->isClass())
         return;
 
-    const QList<QtBrowserItem*> propertyItems = mMembersView->items(property);
-    if (!propertyItems.isEmpty())
-        mMembersView->editItem(propertyItems.first());
+    auto &classType = static_cast<ClassPropertyType&>(*propertyType);
+    if (classType.members.contains(name)) {
+        QMessageBox::critical(this,
+                              tr("Error Adding Member"),
+                              tr("There is already a member named '%1'.").arg(name));
+        return;
+    }
+
+    applyMemberToSelectedType(name, value);
+    updateDetails();
+
+    if (auto property = mMembersProperty->property(name)) {
+        mMembersView->focusProperty(property);
+        mMembersView->setSelectedProperties({ property });
+    }
 }
 
 void PropertyTypesEditor::removeMember()
 {
-    QtBrowserItem *item = mMembersView->currentItem();
-    if (!item)
+    PropertyType *propertyType = selectedPropertyType();
+    if (!propertyType || !propertyType->isClass())
         return;
 
-    const QString name = item->property()->propertyName();
+    const auto properties = mMembersView->selectedProperties();
+    if (properties.size() != 1)
+        return;
 
-    // Select a different item before removing the current one
-    QList<QtBrowserItem *> items = mMembersView->topLevelItems();
-    if (items.count() > 1) {
-        const int currentItemIndex = items.indexOf(item);
-        if (item == items.last())
-            mMembersView->setCurrentItem(items.at(currentItemIndex - 1));
-        else
-            mMembersView->setCurrentItem(items.at(currentItemIndex + 1));
+    const QString name = properties.first()->name();
+
+    if (!confirm(tr("Remove Member"),
+                 tr("Are you sure you want to remove '%1' from class '%2'? This action cannot be undone.")
+                 .arg(name, propertyType->name), this)) {
+        return;
     }
 
-    mPropertiesHelper->deleteProperty(item->property());
+    // Select a different item before removing the current one
+    const auto &subProperties = mMembersProperty->subProperties();
+    if (subProperties.size() > 1) {
+        const int currentIndex = subProperties.indexOf(properties.first());
+        if (currentIndex == subProperties.size() - 1)
+            subProperties[currentIndex - 1]->setSelected(true);
+        else
+            subProperties[currentIndex + 1]->setSelected(true);
+    }
 
-    PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Class)
-        return;
-
-    static_cast<ClassPropertyType&>(*propertyType).members.remove(name);
-
-    applyPropertyTypes();
+    mMembersProperty->removeMember(name);
 }
 
-void PropertyTypesEditor::renameMember()
+void PropertyTypesEditor::renameSelectedMember()
 {
-    QtBrowserItem *item = mMembersView->currentItem();
-    if (!item)
+    const auto properties = mMembersView->selectedProperties();
+    if (properties.size() != 1)
         return;
 
-    const QString oldName = item->property()->propertyName();
+    renameMember(properties.first()->name());
+}
 
+void PropertyTypesEditor::renameMember(const QString &name)
+{
     QInputDialog *dialog = new QInputDialog(mMembersView);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setInputMode(QInputDialog::TextInput);
     dialog->setLabelText(tr("Name:"));
-    dialog->setTextValue(oldName);
+    dialog->setTextValue(name);
     dialog->setWindowTitle(tr("Rename Member"));
-    connect(dialog, &QInputDialog::textValueSelected, this, &PropertyTypesEditor::renameMemberTo);
+    connect(dialog, &QInputDialog::textValueSelected, this, [=] (const QString &newName) {
+        renameMemberTo(name, newName);
+    });
+
     dialog->open();
 }
 
-void PropertyTypesEditor::renameMemberTo(const QString &name)
+void PropertyTypesEditor::renameMemberTo(const QString &oldName, const QString &name)
 {
-    if (name.isEmpty())
+    if (name.isEmpty() || oldName == name)
         return;
 
-    QtBrowserItem *item = mMembersView->currentItem();
-    if (!item)
+    auto propertyType = selectedPropertyType();
+    if (!propertyType || !propertyType->isClass())
         return;
 
-    const QString oldName = item->property()->propertyName();
-    if (oldName == name)
+    auto &classType = *static_cast<ClassPropertyType*>(propertyType);
+    if (!classType.members.contains(oldName))
         return;
 
-    const auto selectionModel = mUi->propertyTypesView->selectionModel();
-    const auto selectedRows = selectionModel->selectedRows();
-
-    for (const QModelIndex &index : selectedRows) {
-        auto propertyType = mPropertyTypesModel->propertyTypeAt(index);
-        if (propertyType->type != PropertyType::PT_Class)
-            continue;
-
-        auto &classType = *static_cast<ClassPropertyType*>(propertyType);
-        if (classType.members.contains(oldName))
-            classType.members.insert(name, classType.members.take(oldName));
+    if (classType.members.contains(name)) {
+        QMessageBox::critical(this,
+                              tr("Error Renaming Member"),
+                              tr("There is already a member named '%1'.").arg(name));
+        return;
     }
+
+    classType.members.insert(name, classType.members.take(oldName));
 
     applyPropertyTypes();
     updateDetails();
+}
+
+void PropertyTypesEditor::importPropertyTypes()
+{
+    Session &session = Session::current();
+    const QString lastPath = session.lastPath(Session::PropertyTypesFile);
+
+    PropertyTypesFilter filter(lastPath);
+    // When importing, we don't use the "objectTypesJsonFilter". Instead, we
+    // will auto-detect the format of the JSON file.
+    const QString filters = QStringList { filter.propertyTypesFilter, filter.objectTypesXmlFilter }.join(QStringLiteral(";;"));
+    const QString fileName =
+            QFileDialog::getOpenFileName(this, tr("Import Types"),
+                                         lastPath,
+                                         filters,
+                                         &filter.selectedFilter);
+    if (fileName.isEmpty())
+        return;
+
+    session.setLastPath(Session::PropertyTypesFile, fileName);
+
+    ObjectTypes objectTypes;
+    const ExportContext context(*mPropertyTypesModel->propertyTypes(),
+                                QFileInfo(fileName).path());
+
+    if (filter.selectedFilter == filter.objectTypesXmlFilter) {
+        ObjectTypesSerializer serializer(ObjectTypesSerializer::Xml);
+
+        if (!serializer.readObjectTypes(fileName, objectTypes, context)) {
+            QMessageBox::critical(this, tr("Error Reading Object Types"),
+                                  serializer.errorString());
+            return;
+        }
+    } else {
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            const auto error = QCoreApplication::translate("File Errors", "Could not open file for reading.");
+            QMessageBox::critical(this, tr("Error Reading Types"), error);
+            return;
+        }
+
+        QJsonParseError jsonError;
+        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &jsonError);
+        if (document.isNull()) {
+            QMessageBox::critical(this, tr("Error Reading Types"),
+                                  Utils::Error::jsonParseError(jsonError));
+            return;
+        }
+
+        // We can detect the old format by the absence of an "id" property:
+        //
+        //  Object Types: "[ { color, name, properties } ]"
+        //  Custom Types: "[ { id, name, type, ... } ]"
+        //
+        const QJsonArray array = document.array();
+        const bool oldFormat = array.first().toObject().value(QLatin1String("id")).isUndefined();
+        if (oldFormat) {
+            fromJson(array, objectTypes, context);
+        } else {
+            PropertyTypes typesToImport;
+            typesToImport.loadFromJson(array, QFileInfo(fileName).path());
+
+            if (typesToImport.count() > 0) {
+                mPropertyTypesModel->importPropertyTypes(std::move(typesToImport));
+                applyPropertyTypes();
+            }
+        }
+    }
+
+    if (!objectTypes.isEmpty()) {
+        mPropertyTypesModel->importObjectTypes(objectTypes);
+        applyPropertyTypes();
+    }
+}
+
+void PropertyTypesEditor::exportPropertyTypes()
+{
+    Session &session = Session::current();
+    QString lastPath = session.lastPath(Session::PropertyTypesFile);
+
+    if (!QFileInfo(lastPath).isFile())
+        lastPath.append(QStringLiteral("/propertytypes.json"));
+
+    PropertyTypesFilter filter(lastPath);
+    const QString fileName =
+            QFileDialog::getSaveFileName(this, tr("Export Types"),
+                                         lastPath,
+                                         filter.filters,
+                                         &filter.selectedFilter);
+    if (fileName.isEmpty())
+        return;
+
+    session.setLastPath(Session::PropertyTypesFile, fileName);
+
+    const auto types = mPropertyTypesModel->propertyTypes();
+
+    if (filter.selectedFilter == filter.objectTypesJsonFilter ||
+            filter.selectedFilter == filter.objectTypesXmlFilter) {
+        ObjectTypesSerializer serializer;
+        const ObjectTypes objectTypes = toObjectTypes(*types);
+
+        if (!serializer.writeObjectTypes(fileName, objectTypes)) {
+            QMessageBox::critical(this, tr("Error Writing Object Types"),
+                                  serializer.errorString());
+        }
+    } else {
+        SaveFile file(fileName);
+
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            const auto error = QCoreApplication::translate("File Errors", "Could not open file for writing.");
+            QMessageBox::critical(this, tr("Error Writing Types"), error);
+            return;
+        }
+
+        file.device()->write(QJsonDocument(types->toJson()).toJson());
+
+        if (!file.commit())
+            QMessageBox::critical(this, tr("Error Writing Types"), file.errorString());
+    }
 }
 
 void PropertyTypesEditor::updateDetails()
@@ -504,22 +826,17 @@ void PropertyTypesEditor::updateDetails()
 
     switch (propertyType->type) {
     case PropertyType::PT_Invalid:
+        Q_UNREACHABLE();
         break;
     case PropertyType::PT_Class: {
         const auto &classType = *static_cast<const ClassPropertyType*>(propertyType);
 
-        mPropertiesHelper->clear();
+        mColorButton->setColor(classType.color);
+        mUseAsPropertyCheckBox->setChecked(classType.isPropertyValueType());
+        mDrawFillCheckBox->setChecked(classType.drawFill);
+        updateClassUsageDetails(classType);
 
-        QMapIterator<QString, QVariant> it(classType.members);
-        while (it.hasNext()) {
-            it.next();
-
-            const QString &name = it.key();
-            const QVariant &value = it.value();
-
-            QtProperty *property = mPropertiesHelper->createProperty(name, value);
-            mMembersView->addProperty(property);
-        }
+        mMembersProperty->setValue(classType.members);
         break;
     }
     case PropertyType::PT_Enum: {
@@ -537,22 +854,32 @@ void PropertyTypesEditor::updateDetails()
     mNameEdit->setText(propertyType->name);
 }
 
+void PropertyTypesEditor::updateClassUsageDetails(const ClassPropertyType &classType)
+{
+    QScopedValueRollback<bool> updatingDetails(mUpdatingDetails, true);
+
+    mClassOfCheckBox->setChecked(classType.usageFlags & ClassPropertyType::AnyObjectClass);
+
+    QStringList selectedTypes;
+    for (const NamedFlag &namedFlag : std::as_const(mFlagsWithNames)) {
+        if (classType.usageFlags & namedFlag.flag)
+            selectedTypes.append(namedFlag.name);
+    }
+
+    if (selectedTypes.isEmpty()) {
+        mClassOfButton->setText(tr("Select Types"));
+    } else {
+        if (selectedTypes.size() > 3) {
+            selectedTypes.erase(selectedTypes.begin() + 3, selectedTypes.end());
+            selectedTypes.append(QStringLiteral("..."));
+        }
+        mClassOfButton->setText(selectedTypes.join(QStringLiteral(", ")));
+    }
+}
+
 void PropertyTypesEditor::selectedValuesChanged(const QItemSelection &selected)
 {
     mRemoveValueAction->setEnabled(!selected.isEmpty());
-}
-
-void deleteAllFromLayout(QLayout *layout)
-{
-    for (int i = layout->count() - 1; i >= 0; --i) {
-        QLayoutItem *item = layout->takeAt(i);
-        delete item->widget();
-
-        if (auto layout = item->layout())
-            deleteAllFromLayout(layout);
-
-        delete item;
-    }
 }
 
 void PropertyTypesEditor::setCurrentPropertyType(PropertyType::Type type)
@@ -562,18 +889,14 @@ void PropertyTypesEditor::setCurrentPropertyType(PropertyType::Type type)
 
     mCurrentPropertyType = type;
 
-    delete mPropertiesHelper;
-    mPropertiesHelper = nullptr;
+    delete mMembersProperty;
+    mMembersProperty = nullptr;
 
-    if (mDetailsLayout) {
-        deleteAllFromLayout(mDetailsLayout);
-        delete mDetailsLayout;
-    }
-
-    mDetailsLayout = new QFormLayout;
-    mUi->horizontalLayout->addLayout(mDetailsLayout);
+    while (mDetailsLayout->rowCount() > 0)
+        mDetailsLayout->removeRow(0);
 
     mNameEdit = nullptr;
+    mColorButton = nullptr;
     mStorageTypeComboBox = nullptr;
     mValuesAsFlagsCheckBox = nullptr;
     mValuesView = nullptr;
@@ -588,76 +911,125 @@ void PropertyTypesEditor::setCurrentPropertyType(PropertyType::Type type)
     mNameEdit = new QLineEdit(mUi->groupBox);
     mNameEdit->addAction(PropertyTypesModel::iconForPropertyType(type), QLineEdit::LeadingPosition);
 
-    connect(mNameEdit, &QLineEdit::textEdited,
-            this, &PropertyTypesEditor::nameChanged);
-
-    mDetailsLayout->addRow(tr("Name"), mNameEdit);
+    connect(mNameEdit, &QLineEdit::editingFinished,
+            this, &PropertyTypesEditor::nameEditingFinished);
 
     switch (type) {
     case PropertyType::PT_Invalid:
+        Q_UNREACHABLE();
         break;
-    case PropertyType::PT_Class: {
-        mMembersView = new QtTreePropertyBrowser(this);
-        mPropertiesHelper = new CustomPropertiesHelper(mMembersView, this);
-
-        connect(mPropertiesHelper, &CustomPropertiesHelper::propertyValueChanged,
-                this, &PropertyTypesEditor::memberValueChanged);
-
-        connect(mMembersView, &QtTreePropertyBrowser::currentItemChanged,
-                this, &PropertyTypesEditor::currentMemberItemChanged);
-
-        QToolBar *membersToolBar = createSmallToolBar(mUi->groupBox);
-        membersToolBar->addAction(mAddMemberAction);
-        membersToolBar->addAction(mRemoveMemberAction);
-        membersToolBar->addAction(mRenameMemberAction);
-
-        auto membersWithToolBarLayout = new QVBoxLayout;
-        membersWithToolBarLayout->setSpacing(0);
-        membersWithToolBarLayout->setContentsMargins(0, 0, 0, 0);
-        membersWithToolBarLayout->addWidget(mMembersView);
-        membersWithToolBarLayout->addWidget(membersToolBar);
-
-        mDetailsLayout->addRow(tr("Members"), membersWithToolBarLayout);
+    case PropertyType::PT_Class:
+        addClassProperties();
+        break;
+    case PropertyType::PT_Enum:
+        addEnumProperties();
         break;
     }
-    case PropertyType::PT_Enum: {
-        mStorageTypeComboBox = new QComboBox(mUi->groupBox);
-        mStorageTypeComboBox->addItems({ tr("String"), tr("Number") });
+}
 
-        connect(mStorageTypeComboBox, static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
-                this, [this] (int index) { if (index != -1) setStorageType(static_cast<EnumPropertyType::StorageType>(index)); });
+void PropertyTypesEditor::addClassProperties()
+{
+    mColorButton = new ColorButton(mUi->groupBox);
+    mColorButton->setToolTip(tr("Color"));
+    mColorButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    connect(mColorButton, &ColorButton::colorChanged,
+            this, &PropertyTypesEditor::colorChanged);
 
-        mValuesAsFlagsCheckBox = new QCheckBox(tr("Allow multiple values (flags)"), mUi->groupBox);
+    mDrawFillCheckBox = new QCheckBox(tr("Draw fill"));
+    connect(mDrawFillCheckBox, &QCheckBox::toggled,
+            this, &PropertyTypesEditor::setDrawFill);
+    auto nameAndColor = new QHBoxLayout;
+    nameAndColor->addWidget(mNameEdit);
+    nameAndColor->addWidget(mColorButton);
+    nameAndColor->addWidget(mDrawFillCheckBox);
 
-        connect(mValuesAsFlagsCheckBox, &QCheckBox::toggled,
-                this, [this] (bool checked) { setValuesAsFlags(checked); });
+    mMembersView = new PropertiesView(this);
 
-        mValuesView = new QTreeView(this);
-        mValuesView->setRootIsDecorated(false);
-        mValuesView->setUniformRowHeights(true);
-        mValuesView->setHeaderHidden(true);
-        mValuesView->setSelectionMode(QAbstractItemView::ExtendedSelection);
-        mValuesView->setModel(mValuesModel);
+    const auto halfSpacing = Utils::dpiScaled(2);
+    mMembersView->widget()->setContentsMargins(0, halfSpacing, 0, halfSpacing);
 
-        connect(mValuesView->selectionModel(), &QItemSelectionModel::selectionChanged,
-                this, &PropertyTypesEditor::selectedValuesChanged);
+    mMembersProperty = new VariantMapProperty(QString(), this);
+    mMembersView->setRootProperty(mMembersProperty);
 
-        QToolBar *valuesToolBar = createSmallToolBar(mUi->groupBox);
-        valuesToolBar->addAction(mAddValueAction);
-        valuesToolBar->addAction(mRemoveValueAction);
+    connect(mMembersProperty, &VariantMapProperty::valueChanged,
+            this, &PropertyTypesEditor::classMembersChanged);
 
-        auto valuesWithToolBarLayout = new QVBoxLayout;
-        valuesWithToolBarLayout->setSpacing(0);
-        valuesWithToolBarLayout->setContentsMargins(0, 0, 0, 0);
-        valuesWithToolBarLayout->addWidget(mValuesView);
-        valuesWithToolBarLayout->addWidget(valuesToolBar);
+    connect(mMembersView, &PropertiesView::selectedPropertiesChanged,
+            this, &PropertyTypesEditor::selectedMembersChanged);
 
-        mDetailsLayout->addRow(tr("Save as"), mStorageTypeComboBox);
-        mDetailsLayout->addRow(QString(), mValuesAsFlagsCheckBox);
-        mDetailsLayout->addRow(tr("Values"), valuesWithToolBarLayout);
-        break;
-    }
-    }
+    mUseAsPropertyCheckBox = new QCheckBox(tr("Property value"));
+
+    connect(mUseAsPropertyCheckBox, &QCheckBox::toggled,
+            this, [this] (bool checked) { setUsageFlags(ClassPropertyType::PropertyValueType, checked); });
+
+    mClassOfButton = new DropDownPushButton(tr("Select Types"));
+    mClassOfButton->setAutoDefault(false);
+    mClassOfCheckBox = new QCheckBox(tr("Class of"));
+
+    connect(mClassOfButton, &QToolButton::pressed, this, &PropertyTypesEditor::openClassOfPopup);
+    connect(mClassOfCheckBox, &QCheckBox::toggled,
+            this, [this] (bool checked) { setUsageFlags(ClassPropertyType::AnyObjectClass, checked); });
+
+    auto usageOptions = new QHBoxLayout;
+    usageOptions->addWidget(mUseAsPropertyCheckBox);
+    usageOptions->addSpacing(Utils::dpiScaled(20));
+    usageOptions->addWidget(mClassOfCheckBox);
+    usageOptions->addWidget(mClassOfButton);
+    usageOptions->addStretch();
+
+    QToolBar *membersToolBar = createSmallToolBar(mUi->groupBox);
+    membersToolBar->addAction(mAddMemberAction);
+    membersToolBar->addAction(mRemoveMemberAction);
+    membersToolBar->addAction(mRenameMemberAction);
+
+    auto membersWithToolBarLayout = new QVBoxLayout;
+    membersWithToolBarLayout->setSpacing(0);
+    membersWithToolBarLayout->setContentsMargins(0, 0, 0, 0);
+    membersWithToolBarLayout->addWidget(mMembersView);
+    membersWithToolBarLayout->addWidget(membersToolBar);
+
+    mDetailsLayout->addRow(tr("Name"), nameAndColor);
+    mDetailsLayout->addRow(tr("Use as"), usageOptions);
+    mDetailsLayout->addRow(tr("Members"), membersWithToolBarLayout);
+}
+
+void PropertyTypesEditor::addEnumProperties()
+{
+    mStorageTypeComboBox = new QComboBox(mUi->groupBox);
+    mStorageTypeComboBox->addItems({ tr("String"), tr("Number") });
+
+    connect(mStorageTypeComboBox, static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+            this, [this] (int index) { if (index != -1) setStorageType(static_cast<EnumPropertyType::StorageType>(index)); });
+
+    mValuesAsFlagsCheckBox = new QCheckBox(tr("Allow multiple values (flags)"), mUi->groupBox);
+
+    connect(mValuesAsFlagsCheckBox, &QCheckBox::toggled,
+            this, [this] (bool checked) { setValuesAsFlags(checked); });
+
+    mValuesView = new QTreeView(this);
+    mValuesView->setRootIsDecorated(false);
+    mValuesView->setUniformRowHeights(true);
+    mValuesView->setHeaderHidden(true);
+    mValuesView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    mValuesView->setModel(mValuesModel);
+
+    connect(mValuesView->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, &PropertyTypesEditor::selectedValuesChanged);
+
+    QToolBar *valuesToolBar = createSmallToolBar(mUi->groupBox);
+    valuesToolBar->addAction(mAddValueAction);
+    valuesToolBar->addAction(mRemoveValueAction);
+
+    auto valuesWithToolBarLayout = new QVBoxLayout;
+    valuesWithToolBarLayout->setSpacing(0);
+    valuesWithToolBarLayout->setContentsMargins(0, 0, 0, 0);
+    valuesWithToolBarLayout->addWidget(mValuesView);
+    valuesWithToolBarLayout->addWidget(valuesToolBar);
+
+    mDetailsLayout->addRow(tr("Name"), mNameEdit);
+    mDetailsLayout->addRow(tr("Save as"), mStorageTypeComboBox);
+    mDetailsLayout->addRow(QString(), mValuesAsFlagsCheckBox);
+    mDetailsLayout->addRow(tr("Values"), valuesWithToolBarLayout);
 }
 
 void PropertyTypesEditor::selectFirstPropertyType()
@@ -679,7 +1051,7 @@ void PropertyTypesEditor::valuesChanged()
         return;
 
     PropertyType *propertyType = selectedPropertyType();
-    if (!propertyType || propertyType->type != PropertyType::PT_Enum)
+    if (!propertyType || !propertyType->isEnum())
         return;
 
     const QStringList newValues = mValuesModel->stringList();
@@ -689,22 +1061,73 @@ void PropertyTypesEditor::valuesChanged()
     applyPropertyTypes();
 }
 
-void PropertyTypesEditor::nameChanged(const QString &name)
+void PropertyTypesEditor::nameEditingFinished()
 {
+    // The dialog that might pop up when setPropertyTypeName fails can cause
+    // another "editingFinished" signal to get emitted from the QLineEdit due
+    // to losing focus. This needs to be ignored to prevent lockup in the UI
+    // with two modal dialogs (issue #3380).
+    if (mSettingName)
+        return;
+
     const auto index = selectedPropertyTypeIndex();
     if (!index.isValid())
         return;
 
+    const auto name = mNameEdit->text();
+    const auto type = mPropertyTypesModel->propertyTypeAt(index);
+
     QScopedValueRollback<bool> settingName(mSettingName, true);
-    mPropertyTypesModel->setPropertyTypeName(index.row(), name);
+    if (!mPropertyTypesModel->setPropertyTypeName(index.row(), name))
+        mNameEdit->setText(type->name);
 }
 
-void PropertyTypesEditor::memberValueChanged(const QString &name, const QVariant &value)
+void PropertyTypesEditor::colorChanged(const QColor &color)
 {
     if (mUpdatingDetails)
         return;
 
-    applyMemberToSelectedType(name, value);
+    if (ClassPropertyType *classType = selectedClassPropertyType()) {
+        classType->color = color;
+        applyPropertyTypes();
+    }
+}
+
+void PropertyTypesEditor::setDrawFill(bool value)
+{
+    if (mUpdatingDetails)
+        return;
+
+    if (ClassPropertyType *classType = selectedClassPropertyType()) {
+        classType->drawFill = value;
+        applyPropertyTypes();
+    }
+}
+
+void PropertyTypesEditor::setUsageFlags(int flags, bool value)
+{
+    if (mUpdatingDetails)
+        return;
+
+    if (ClassPropertyType *classType = selectedClassPropertyType()) {
+        classType->setUsageFlags(flags, value);
+        updateClassUsageDetails(*classType);
+        applyPropertyTypes();
+    }
+}
+
+void PropertyTypesEditor::classMembersChanged()
+{
+    if (mUpdatingDetails)
+        return;
+
+    ClassPropertyType *classType = selectedClassPropertyType();
+    if (!classType)
+        return;
+
+    classType->members = mMembersProperty->value();
+
+    applyPropertyTypes();
 }
 
 } // namespace Tiled

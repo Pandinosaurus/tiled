@@ -16,30 +16,27 @@ Apart from the list of folders, a project currently has the following
 properties, which can be changed through the *Project -> Project
 Properties...* dialog.
 
+Compatibility Version
+   The Tiled version to target when saving or exporting files. Can be used to
+   maintain compatibility with earlier versions of Tiled or with
+   :doc:`/reference/support-for-tmx-maps` that do not yet support certain
+   backwards-incompatible changes.
+
 Extensions Directory
    A project-specific directory where you can put :doc:`Tiled extensions
-   </reference/scripting>`. It defaults to simply ``extensions``, so when you
-   have a directory called "extensions" alonside your project file it will be
+   </manual/scripting>`. It defaults to simply ``extensions``, so when you
+   have a directory called "extensions" alongside your project file it will be
    picked up automatically.
 
    The directory is loaded in addition to the global extensions.
 
-Object Types File
-   Refers to the file defining the object types. Be sure to specify this file
-   before opening the :ref:`Object Types Editor <predefining-properties>`, to
-   make sure any types you define are saved to the right location.
-
-   When left unspecified, object type definitions are saved to a global
-   location.
-
-Property Types
-   Any types defined in the :ref:`Property Types Editor <custom-property-types>`
-   are automatically saved in the project.
-
 Automapping Rules File
-   Refers to an :doc:`automapping` rules file that should be used for all maps
-   while this project is loaded. It is ignored for maps that have a
-   ``rules.txt`` file saved alongside them.
+   Refers to an :doc:`automapping` rules file, or a single rule map, that
+   should be used for all maps while this project is loaded. It is ignored for
+   maps that have a ``rules.txt`` file saved alongside them.
+
+Any types defined in the :ref:`Custom Types Editor <custom-property-types>`
+are also saved in the project.
 
 .. _sessions:
 
@@ -73,8 +70,8 @@ just type the name of the file you'd like to open.
 
    There are many ways in which the projects could be made more powerful:
 
-   -  Make the project accessible through the :doc:`scripting API
-      </reference/scripting>`.
+   -  Make the custom types defined in the project accessible through the
+      :doc:`scripting API </manual/scripting>` (`#3419 <https://github.com/mapeditor/tiled/issues/3419>`__).
 
    -  Allow turning off features on a per-project basis, to simplify the UI
       and reduce the chance of accidentally doing something your project

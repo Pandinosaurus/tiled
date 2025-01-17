@@ -25,6 +25,7 @@
 #include "tilesetdocument.h"
 
 #include <QHash>
+#include <QIcon>
 #include <QList>
 #include <QObject>
 #include <QPointF>
@@ -67,6 +68,7 @@ class DocumentManager : public QObject
     ~DocumentManager() override;
 
     friend class MainWindow;
+    friend class Document;      // for file watching
 
 public:
     static DocumentManager *instance();
@@ -101,7 +103,7 @@ public:
     void switchToDocumentAndHandleSimiliarTileset(MapDocument *mapDocument, QPointF viewCenter, qreal scale);
 
     void addDocument(const DocumentPtr &document);
-    void insertDocument(int index, const DocumentPtr &document);
+    int insertDocument(int index, const DocumentPtr &document);
 
     bool isDocumentModified(Document *document) const;
 
@@ -109,6 +111,7 @@ public:
                              FileFormat *fileFormat = nullptr,
                              QString *error = nullptr);
 
+    bool saveDocument(Document *document);
     bool saveDocument(Document *document, const QString &fileName);
     bool saveDocumentAs(Document *document);
 
@@ -121,6 +124,7 @@ public:
 
     bool reloadCurrentDocument();
     bool reloadDocumentAt(int index);
+    bool reloadDocument(Document *document);
 
     void checkTilesetColumns(MapDocument *mapDocument);
     bool checkTilesetColumns(TilesetDocument *tilesetDocument);
@@ -136,15 +140,14 @@ public:
 
     void abortMultiDocumentClose();
 
-    WorldDocument *ensureWorldDocument(const QString &fileName);
     bool isAnyWorldModified() const;
-    bool isWorldModified(const QString &fileName) const;
 
     QString fileDialogStartLocation() const;
 
 signals:
     void documentCreated(Document *document);
     void documentOpened(Document *document);
+    void documentReloaded(Document *document);
     void documentAboutToBeSaved(Document *document);
     void documentSaved(Document *document);
 
@@ -189,12 +192,14 @@ public slots:
     void saveFile();
 
 private:
-    void onWorldUnloaded(const QString &worldFile);
+    void onWorldLoaded(WorldDocument *worldDocument);
+    void onWorldUnloaded(WorldDocument *worldDocument);
 
     void currentIndexChanged();
     void fileNameChanged(const QString &fileName,
                          const QString &oldFileName);
     void updateDocumentTab(Document *document);
+    void onDocumentChanged(const ChangeEvent &event);
     void onDocumentSaved();
     void documentTabMoved(int from, int to);
     void tabContextMenuRequested(const QPoint &pos);
@@ -220,8 +225,12 @@ private:
     MapDocument *openMapFile(const QString &path);
     TilesetDocument *openTilesetFile(const QString &path);
 
+    void registerDocument(Document *document);
+    void unregisterDocument(Document *document);
+
+    QIcon mLockedIcon;
+
     QVector<DocumentPtr> mDocuments;
-    QMap<QString, WorldDocument*> mWorldDocuments;
     TilesetDocumentsModel *mTilesetDocumentsModel;
 
     // Pointer becomes null when deleted as part of the UI, to prevent double-deletion
@@ -238,6 +247,7 @@ private:
 
     QUndoGroup *mUndoGroup;
     FileSystemWatcher *mFileSystemWatcher;
+    QHash<QString, Document*> mDocumentByFileName;
 
     static DocumentManager *mInstance;
 
@@ -253,6 +263,16 @@ private:
 inline QUndoGroup *DocumentManager::undoGroup() const
 {
     return mUndoGroup;
+}
+
+/**
+ * Save the given document to its existing file name.
+ *
+ * @return <code>true</code> on success, <code>false</code> on failure
+ */
+inline bool DocumentManager::saveDocument(Document *document)
+{
+    return saveDocument(document, document->fileName());
 }
 
 /**

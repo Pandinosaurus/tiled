@@ -40,8 +40,10 @@ class EditableTile : public EditableObject
     Q_PROPERTY(int width READ width)
     Q_PROPERTY(int height READ height)
     Q_PROPERTY(QSize size READ size)
-    Q_PROPERTY(QString type READ type WRITE setType)
+    Q_PROPERTY(QString type READ className WRITE setClassName)  // compatibility with Tiled < 1.9
     Q_PROPERTY(QString imageFileName READ imageFileName WRITE setImageFileName)
+    Q_PROPERTY(Tiled::ScriptImage *image READ image WRITE setImage)
+    Q_PROPERTY(QRect imageRect READ imageRect WRITE setImageRect)
     Q_PROPERTY(qreal probability READ probability WRITE setProbability)
     Q_PROPERTY(Tiled::EditableObjectGroup *objectGroup READ objectGroup WRITE setObjectGroup)
     Q_PROPERTY(QJSValue frames READ frames WRITE setFrames)
@@ -74,15 +76,17 @@ public:
     int width() const;
     int height() const;
     QSize size() const;
-    const QString &type() const;
     QString imageFileName() const;
+    ScriptImage *image() const;
+    QRect imageRect() const;
     qreal probability() const;
     EditableObjectGroup *objectGroup() const;
     QJSValue frames() const;
     bool isAnimated() const;
     EditableTileset *tileset() const;
 
-    Q_INVOKABLE void setImage(Tiled::ScriptImage *image);
+    Q_INVOKABLE void setImage(Tiled::ScriptImage *image,
+                              const QString &fileName = QString());
 
     Tile *tile() const;
 
@@ -92,9 +96,13 @@ public:
     const ObjectGroup *attachedObjectGroup() const { return mAttachedObjectGroup; }
     void detachObjectGroup();
 
+    static EditableTile *find(Tile *tile);
+    static EditableTile *get(Tile *tile);
+    static EditableTile *get(EditableTileset *tileset, Tile *tile);
+
 public slots:
-    void setType(const QString &type);
     void setImageFileName(const QString &fileName);
+    void setImageRect(const QRect &rect);
     void setProbability(qreal probability);
     void setObjectGroup(EditableObjectGroup *editableObjectGroup);
     void setFrames(QJSValue value);
@@ -127,14 +135,14 @@ inline QSize EditableTile::size() const
     return tile()->size();
 }
 
-inline const QString &EditableTile::type() const
-{
-    return tile()->type();
-}
-
 inline QString EditableTile::imageFileName() const
 {
     return tile()->imageSource().toString(QUrl::PreferLocalFile);
+}
+
+inline QRect EditableTile::imageRect() const
+{
+    return tile()->imageRect();
 }
 
 inline qreal EditableTile::probability() const
@@ -152,6 +160,9 @@ inline Tile *EditableTile::tile() const
     return static_cast<Tile*>(object());
 }
 
-} // namespace Tiled
+inline EditableTile *EditableTile::find(Tile *tile)
+{
+    return static_cast<EditableTile*>(EditableObject::find(tile));
+}
 
-Q_DECLARE_METATYPE(Tiled::EditableTile*)
+} // namespace Tiled

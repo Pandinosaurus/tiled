@@ -30,7 +30,7 @@ class MapObject;
 
 class MapDocument;
 class MapObjectModel;
-class ReversingRecursiveFilterModel;
+class ReversingProxyModel;
 
 class ObjectsView : public QTreeView
 {
@@ -51,11 +51,6 @@ public:
 
     void setFilter(const QString &filter);
 
-public slots:
-    void saveExpandedLayers();
-    void restoreExpandedLayers();
-    void clearExpandedLayers(MapDocument *mapDocument);
-
 protected:
     bool event(QEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
@@ -69,6 +64,9 @@ protected:
                  const QModelIndex &index) const override;
 
 private:
+    void saveExpandedLayers();
+    void restoreExpandedLayers();
+
     void onActivated(const QModelIndex &proxyIndex);
     void onSectionResized(int logicalIndex);
     void selectedObjectsChanged();
@@ -84,8 +82,7 @@ private:
     void updateRow(MapObject *object);
 
     MapDocument *mMapDocument = nullptr;
-    ReversingRecursiveFilterModel *mProxyModel;
-    QMap<MapDocument*, QList<int> > mExpandedLayers;
+    ReversingProxyModel *mProxyModel;
     bool mSynching = false;
     bool mActiveFilter = false;
 };

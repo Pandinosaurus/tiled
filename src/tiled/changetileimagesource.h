@@ -44,8 +44,8 @@ private:
 
     TilesetDocument *mTilesetDocument;
     Tile *mTile;
-    QUrl mOldImageSource;
-    QUrl mNewImageSource;
+    const QUrl mOldImageSource;
+    const QUrl mNewImageSource;
 };
 
 } // namespace Tiled

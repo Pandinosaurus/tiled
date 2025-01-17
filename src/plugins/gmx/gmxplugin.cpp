@@ -35,8 +35,6 @@
 #include <QRegularExpression>
 #include <QXmlStreamWriter>
 
-#include "qtcompat_p.h"
-
 using namespace Tiled;
 using namespace Gmx;
 
@@ -90,8 +88,7 @@ static bool checkIfViewsDefined(const Map *map)
         const ObjectGroup *objectLayer = static_cast<const ObjectGroup*>(layer);
 
         for (const MapObject *object : objectLayer->objects()) {
-            const QString type = object->effectiveType();
-            if (type == "view")
+            if (object->effectiveClassName() == "view")
                 return true;
         }
     }
@@ -147,8 +144,8 @@ bool GmxPlugin::write(const Map *map, const QString &fileName, Options options)
             const ObjectGroup *objectLayer = static_cast<const ObjectGroup*>(layer);
 
             for (const MapObject *object : objectLayer->objects()) {
-                const QString type = object->effectiveType();
-                if (type != "view")
+                const QString &className = object->effectiveClassName();
+                if (className != "view")
                     continue;
 
                 // GM only has 8 views so drop anything more than that
@@ -170,7 +167,7 @@ bool GmxPlugin::write(const Map *map, const QString &fileName, Options options)
                 stream.writeAttribute("yview", QString::number(qRound(pos.y())));
                 stream.writeAttribute("wview", QString::number(qRound(object->width())));
                 stream.writeAttribute("hview", QString::number(qRound(object->height())));
-                // Round these incase user adds properties as floats and not ints
+                // Round these in case user adds properties as floats and not ints
                 stream.writeAttribute("xport", QString::number(qRound(optionalProperty(object, "xport", 0.0))));
                 stream.writeAttribute("yport", QString::number(qRound(optionalProperty(object, "yport", 0.0))));
                 stream.writeAttribute("wport", QString::number(qRound(optionalProperty(object, "wport", 1024.0))));
@@ -207,16 +204,16 @@ bool GmxPlugin::write(const Map *map, const QString &fileName, Options options)
         const auto colorString = QString::number(color.rgba());
 
         for (const MapObject *object : objectLayer->objects()) {
-            const QString type = object->effectiveType();
-            if (type.isEmpty())
+            const QString &className = object->effectiveClassName();
+            if (className.isEmpty())
                 continue;
-            if (type == "view")
+            if (className == "view")
                 continue;
 
             stream.writeStartElement("instance");
 
-            // The type is used to refer to the name of the object
-            stream.writeAttribute("objName", sanitizeName(type));
+            // The class is used to refer to the name of the object
+            stream.writeAttribute("objName", sanitizeName(className));
 
             qreal scaleX = 1;
             qreal scaleY = 1;
@@ -245,7 +242,7 @@ bool GmxPlugin::write(const Map *map, const QString &fileName, Options options)
                 // Tile objects don't necessarily have top-left origin in Tiled,
                 // so the position needs to be translated for top-left origin in
                 // GameMaker, taking into account the rotation.
-                origin -= alignmentOffset(object->bounds(), object->alignment());
+                origin -= alignmentOffset(object->size(), object->alignment());
             }
 
             // Allow overriding the scale using custom properties
@@ -382,9 +379,9 @@ bool GmxPlugin::write(const Map *map, const QString &fileName, Options options)
                                  [](const MapObject *a, const MapObject *b) { return a->y() < b->y(); });
             }
 
-            for (const MapObject *object : qAsConst(objects)) {
-                // Objects with types are already exported as instances
-                if (!object->effectiveType().isEmpty())
+            for (const MapObject *object : std::as_const(objects)) {
+                // Objects with a class are already exported as instances
+                if (!object->effectiveClassName().isEmpty())
                     continue;
 
                 // Non-typed tile objects are exported as tiles. Rotation is

@@ -23,9 +23,11 @@ or tileset itself).
    export-defold
    export-gmx
    export-yy
+   export-tscn
    export-tbin
    export-other
    export-custom
+   python
    export-image
 
 .. note::

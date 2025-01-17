@@ -27,6 +27,7 @@
 #include "changetileobjectgroup.h"
 #include "documentmanager.h"
 #include "mapdocument.h"
+#include "mapdocumentactionhandler.h"
 #include "map.h"
 #include "mapobject.h"
 #include "mapobjectitem.h"
@@ -34,7 +35,6 @@
 #include "mapscene.h"
 #include "objectgroup.h"
 #include "raiselowerhelper.h"
-#include "resizemapobject.h"
 #include "session.h"
 #include "templatemanager.h"
 #include "tile.h"
@@ -42,6 +42,7 @@
 #include "utils.h"
 
 #include <QFileDialog>
+#include <QGraphicsView>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMessageBox>
@@ -49,8 +50,6 @@
 #include <QUndoStack>
 
 #include <QtMath>
-
-#include "qtcompat_p.h"
 
 using namespace Tiled;
 
@@ -96,6 +95,8 @@ AbstractObjectTool::AbstractObjectTool(Id id,
                                        QObject *parent)
     : AbstractTool(id, name, icon, shortcut, parent)
 {
+    setTargetLayerType(Layer::ObjectGroupType);
+
     QIcon flipHorizontalIcon(QLatin1String(":images/24/flip-horizontal.png"));
     QIcon flipVerticalIcon(QLatin1String(":images/24/flip-vertical.png"));
     QIcon rotateLeftIcon(QLatin1String(":images/24/rotate-left.png"));
@@ -132,7 +133,21 @@ AbstractObjectTool::AbstractObjectTool(Id id,
     connect(mRotateLeft, &QAction::triggered, this, &AbstractObjectTool::rotateLeft);
     connect(mRotateRight, &QAction::triggered, this, &AbstractObjectTool::rotateRight);
 
+    setActionsEnabled(false);
+
     AbstractObjectTool::languageChanged();
+}
+
+void AbstractObjectTool::activate(MapScene *scene)
+{
+    AbstractTool::activate(scene);
+    setActionsEnabled(true);
+}
+
+void AbstractObjectTool::deactivate(MapScene *scene)
+{
+    setActionsEnabled(false);
+    AbstractTool::deactivate(scene);
 }
 
 void AbstractObjectTool::keyPressed(QKeyEvent *event)
@@ -217,7 +232,7 @@ void AbstractObjectTool::filterMapObjects(QList<MapObject *> &mapObjects) const
 
         QList<MapObject*> filteredList;
 
-        for (MapObject *mapObject : qAsConst(mapObjects)) {
+        for (MapObject *mapObject : std::as_const(mapObjects)) {
             if (std::any_of(selectedLayers.begin(), selectedLayers.end(),
                             [=] (Layer *layer) { return layer->isParentOrSelf(mapObject->objectGroup()); })) {
                 filteredList.append(mapObject);
@@ -227,11 +242,6 @@ void AbstractObjectTool::filterMapObjects(QList<MapObject *> &mapObjects) const
         if (behavior == SelectedLayers || !filteredList.isEmpty())
             mapObjects.swap(filteredList);
     }
-}
-
-void AbstractObjectTool::updateEnabledState()
-{
-    setEnabled(currentObjectGroup() != nullptr);
 }
 
 ObjectGroup *AbstractObjectTool::currentObjectGroup() const
@@ -244,7 +254,11 @@ ObjectGroup *AbstractObjectTool::currentObjectGroup() const
 
 QList<MapObject*> AbstractObjectTool::mapObjectsAt(const QPointF &pos) const
 {
-    const QList<QGraphicsItem *> &items = mapScene()->items(pos);
+    const QTransform viewTransform = mapScene()->views().first()->transform();
+    const QList<QGraphicsItem *> items = mapScene()->items(pos,
+                                                           Qt::IntersectsItemShape,
+                                                           Qt::DescendingOrder,
+                                                           viewTransform);
 
     QList<MapObject*> objectList;
 
@@ -263,7 +277,11 @@ QList<MapObject*> AbstractObjectTool::mapObjectsAt(const QPointF &pos) const
 
 MapObject *AbstractObjectTool::topMostMapObjectAt(const QPointF &pos) const
 {
-    const QList<QGraphicsItem *> &items = mapScene()->items(pos);
+    const QTransform viewTransform = mapScene()->views().first()->transform();
+    const QList<QGraphicsItem *> items = mapScene()->items(pos,
+                                                           Qt::IntersectsItemShape,
+                                                           Qt::DescendingOrder,
+                                                           viewTransform);
     const SelectionBehavior behavior = selectionBehavior();
 
     MapObject *topMost = nullptr;
@@ -365,16 +383,16 @@ void AbstractObjectTool::resetTileSize()
         if (!isResizedTileObject(mapObject))
             continue;
 
-        commands << new ResizeMapObject(mapDocument(),
+        commands << new ChangeMapObject(mapDocument(),
                                         mapObject,
-                                        mapObject->cell().tile()->size(),
-                                        mapObject->size());
+                                        MapObject::SizeProperty,
+                                        mapObject->cell().tile()->size());
     }
 
     if (!commands.isEmpty()) {
         QUndoStack *undoStack = mapDocument()->undoStack();
         undoStack->beginMacro(tr("Reset Tile Size"));
-        for (auto command : qAsConst(commands))
+        for (auto command : std::as_const(commands))
             undoStack->push(command);
         undoStack->endMacro();
     }
@@ -403,13 +421,13 @@ void AbstractObjectTool::convertRectanglesToPolygons()
 
         commands << new ChangePolygon(mapDocument(),
                                       mapObject,
-                                      polygon, mapObject->polygon());
+                                      polygon);
     }
 
     if (!commands.isEmpty()) {
         QUndoStack *undoStack = mapDocument()->undoStack();
         undoStack->beginMacro(tr("Convert to Polygon"));
-        for (auto command : qAsConst(commands))
+        for (auto command : std::as_const(commands))
             undoStack->push(command);
         undoStack->endMacro();
     }
@@ -484,14 +502,14 @@ void AbstractObjectTool::detachSelectedObjects()
             templateInstances.append(object);
 
             if (Tile *tile = object->cell().tile())
-                sharedTilesets.insert(tile->tileset()->sharedPointer());
+                sharedTilesets.insert(tile->tileset()->sharedFromThis());
         }
     }
 
     auto changeMapObjectCommand = new DetachObjects(currentMapDocument, templateInstances);
 
     // Add any missing tileset used by the templates to the map map before detaching
-    for (const SharedTileset &sharedTileset : qAsConst(sharedTilesets)) {
+    for (const SharedTileset &sharedTileset : std::as_const(sharedTilesets)) {
         if (!currentMapDocument->map()->tilesets().contains(sharedTileset))
             new AddTileset(currentMapDocument, sharedTileset, changeMapObjectCommand);
     }
@@ -529,12 +547,6 @@ void AbstractObjectTool::changeTile()
             tileObjects.append(object);
 
     auto changeMapObjectCommand = new ChangeMapObjectsTile(currentMapDocument, tileObjects, tile());
-
-    // Make sure the tileset is part of the document
-    SharedTileset sharedTileset = tile()->tileset()->sharedPointer();
-    if (!currentMapDocument->map()->tilesets().contains(sharedTileset))
-        new AddTileset(currentMapDocument, sharedTileset, changeMapObjectCommand);
-
     currentMapDocument->undoStack()->push(changeMapObjectCommand);
 }
 
@@ -697,17 +709,13 @@ void AbstractObjectTool::showContextMenu(MapObject *clickedObject,
         menu.addAction(tr("Lower Object to Bottom"), this, &AbstractObjectTool::lowerToBottom, Qt::Key_End);
     }
 
-    auto objectGroups = mapDocument()->map()->objectGroups();
-    if (!objectGroups.isEmpty()) {
+    if (LayerIterator(mapDocument()->map(), Layer::ObjectGroupType).next()) {
         menu.addSeparator();
         QMenu *moveToLayerMenu = menu.addMenu(tr("Move %n Object(s) to Layer",
                                                  "", selectedObjects.size()));
-        for (Layer *layer : objectGroups) {
-            ObjectGroup *objectGroup = static_cast<ObjectGroup*>(layer);
-            QAction *action = moveToLayerMenu->addAction(objectGroup->name());
-            action->setData(QVariant::fromValue(objectGroup));
-            action->setEnabled(objectGroup != sameObjectGroup);
-        }
+
+        auto actionHandler = MapDocumentActionHandler::instance();
+        actionHandler->populateMoveToLayerMenu(moveToLayerMenu, sameObjectGroup);
     }
 
     menu.addSeparator();
@@ -736,6 +744,14 @@ void AbstractObjectTool::showContextMenu(MapObject *clickedObject,
         mapDocument()->moveObjectsToGroup(selectedObjects, objectGroup);
         mapDocument()->setSelectedObjects(selectedObjectsCopy);
     }
+}
+
+void AbstractObjectTool::setActionsEnabled(bool enabled)
+{
+    mFlipHorizontal->setEnabled(enabled);
+    mFlipVertical->setEnabled(enabled);
+    mRotateLeft->setEnabled(enabled);
+    mRotateRight->setEnabled(enabled);
 }
 
 #include "moc_abstractobjecttool.cpp"

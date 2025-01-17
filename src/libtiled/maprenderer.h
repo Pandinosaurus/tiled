@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include "mapobject.h"
 #include "tiled_global.h"
 
 #include <functional>
@@ -82,7 +83,7 @@ public:
      * Returns the bounding rectangle in pixels of the map associated with
      * this renderer.
      */
-    virtual QRect mapBoundingRect() const = 0;
+    QRect mapBoundingRect() const;
 
     /**
      * Returns the bounding rectangle in pixels of the given \a rect given in
@@ -135,7 +136,7 @@ public:
      * \a painter.
      */
     virtual void drawGrid(QPainter *painter, const QRectF &rect,
-                          QColor gridColor = Qt::black, int gridMajor = 0) const = 0;
+                          QColor gridColor = Qt::black, QSize gridMajor = QSize()) const = 0;
 
     virtual QPointF snapToGrid(const QPointF &pixelCoords,
                                int subdivisions = 1) const;
@@ -181,7 +182,7 @@ public:
      */
     virtual void drawMapObject(QPainter *painter,
                                const MapObject *object,
-                               const QColor &color) const = 0;
+                               const MapObjectColors &colors) const = 0;
 
     /**
      * Draws the a pin in the given \a color using the \a painter.
@@ -277,8 +278,9 @@ public:
     static std::unique_ptr<MapRenderer> create(const Map *map);
 
 protected:
-    static void setupGridPens(const QPaintDevice *device, QColor color,
-                              QPen &gridPen, QPen &majorGridPen);
+    void setupGridPens(const QPaintDevice *device, QColor color,
+                       QPen &gridPen, QPen &majorGridPen, int gridSize,
+                       QSize gridMajor) const;
 
     void setCellType(CellType cellType) { mCellType = cellType; }
 

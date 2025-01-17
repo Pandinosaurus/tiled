@@ -32,40 +32,11 @@
 #include "mapobject.h"
 #include "tile.h"
 #include "tilelayer.h"
-#include "tileset.h"
 #include "objectgroup.h"
 
 #include <QtMath>
 
 using namespace Tiled;
-
-QRect IsometricRenderer::mapBoundingRect() const
-{
-    if (!map()->infinite()) {
-        const int side = map()->height() + map()->width();
-        return QRect(0, 0, side * map()->tileWidth() / 2,
-                     side * map()->tileHeight() / 2);
-    }
-
-    QRect mapBounds;
-
-    LayerIterator iterator(map());
-    while (Layer *layer = iterator.next()) {
-        if (TileLayer *tileLayer = dynamic_cast<TileLayer*>(layer))
-            mapBounds = mapBounds.united(tileLayer->bounds());
-    }
-
-    if (mapBounds.size() == QSize(0, 0))
-        mapBounds.setSize(QSize(1, 1));
-
-    const int origin = mapBounds.x() + mapBounds.y();
-    const int side = mapBounds.width() + mapBounds.height();
-
-    return QRect(origin * map()->tileWidth() / 2,
-                 origin * map()->tileHeight() / 2,
-                 side * map()->tileWidth() / 2,
-                 side * map()->tileHeight() / 2);
-}
 
 QRect IsometricRenderer::boundingRect(const QRect &rect) const
 {
@@ -226,7 +197,7 @@ QPainterPath IsometricRenderer::interactionShape(const MapObject *object) const
 }
 
 void IsometricRenderer::drawGrid(QPainter *painter, const QRectF &rect,
-                                 QColor gridColor, int gridMajor) const
+                                 QColor gridColor, QSize gridMajor) const
 {
     const int tileWidth = map()->tileWidth();
     const int tileHeight = map()->tileHeight();
@@ -248,20 +219,20 @@ void IsometricRenderer::drawGrid(QPainter *painter, const QRectF &rect,
     }
 
     QPen gridPen, majorGridPen;
-    setupGridPens(painter->device(), gridColor, gridPen, majorGridPen);
+    setupGridPens(painter->device(), gridColor, gridPen, majorGridPen, qMin(tileWidth, tileHeight), gridMajor);
 
     for (int y = startY; y <= endY; ++y) {
         const QPointF start = tileToScreenCoords(startX, y);
         const QPointF end = tileToScreenCoords(endX, y);
 
-        painter->setPen(gridMajor != 0 && y % gridMajor == 0 ? majorGridPen : gridPen);
+        painter->setPen(gridMajor.height() != 0 && y % gridMajor.height() == 0 ? majorGridPen : gridPen);
         painter->drawLine(start, end);
     }
     for (int x = startX; x <= endX; ++x) {
         const QPointF start = tileToScreenCoords(x, startY);
         const QPointF end = tileToScreenCoords(x, endY);
 
-        painter->setPen(gridMajor != 0 && x % gridMajor == 0 ? majorGridPen : gridPen);
+        painter->setPen(gridMajor.width() != 0 && x % gridMajor.width() == 0 ? majorGridPen : gridPen);
         painter->drawLine(start, end);
     }
 }
@@ -338,12 +309,7 @@ void IsometricRenderer::drawTileSelection(QPainter *painter,
 {
     QPainterPath path;
 
-#if QT_VERSION < 0x050800
-    const auto rects = region.rects();
-    for (const QRect &r : rects) {
-#else
     for (const QRect &r : region) {
-#endif
         QPolygonF polygon = tileRectToScreenPolygon(r);
         if (QRectF(polygon.boundingRect()).intersects(exposed))
             path.addPolygon(polygon);
@@ -363,7 +329,7 @@ void IsometricRenderer::drawTileSelection(QPainter *painter,
 
 void IsometricRenderer::drawMapObject(QPainter *painter,
                                       const MapObject *object,
-                                      const QColor &color) const
+                                      const MapObjectColors &colors) const
 {
     painter->save();
 
@@ -400,7 +366,7 @@ void IsometricRenderer::drawMapObject(QPainter *painter,
             painter->setPen(pen);
             painter->drawRect(bounds);
             pen.setStyle(Qt::DotLine);
-            pen.setColor(color);
+            pen.setColor(colors.main);
             painter->setPen(pen);
             painter->drawRect(bounds);
         }
@@ -418,18 +384,16 @@ void IsometricRenderer::drawMapObject(QPainter *painter,
     } else {
         const qreal lineWidth = objectLineWidth();
         const qreal scale = painterScale();
-        const qreal shadowOffset = (lineWidth == 0 ? 1 : lineWidth) / scale;
+        const QPointF shadowOffset(0, (lineWidth == 0 ? 1 : lineWidth) / scale);
 
-        QColor brushColor = color;
-        brushColor.setAlpha(50);
-        QBrush brush(brushColor);
+        QBrush brush = colors.fill.isValid() ? QBrush(colors.fill) : QBrush(Qt::NoBrush);
 
         pen.setJoinStyle(Qt::RoundJoin);
         pen.setCapStyle(Qt::RoundCap);
         pen.setWidthF(lineWidth);
 
         QPen colorPen(pen);
-        colorPen.setColor(color);
+        colorPen.setColor(colors.main);
 
         painter->setPen(pen);
         painter->setRenderHint(QPainter::Antialiasing);
@@ -444,10 +408,8 @@ void IsometricRenderer::drawMapObject(QPainter *painter,
             const QPolygonF rect = pixelRectToScreenPolygon(bounds);
             const QPainterPath ellipse = shape(object);
 
-            painter->drawPath(ellipse);
-            painter->drawPolygon(rect);
-
-            painter->translate(0, -shadowOffset);
+            painter->drawPath(ellipse.translated(shadowOffset));
+            painter->drawPolygon(rect.translated(shadowOffset));
 
             painter->setPen(colorPen);
             painter->drawPolygon(rect);
@@ -458,63 +420,47 @@ void IsometricRenderer::drawMapObject(QPainter *painter,
         }
         case MapObject::Point:
             painter->translate(pixelToScreenCoords(object->position()));
-            drawPointObject(painter, color);
+            drawPointObject(painter, colors.main);
             break;
         case MapObject::Rectangle: {
-            QPolygonF polygon = pixelRectToScreenPolygon(bounds);
-            painter->drawPolygon(polygon);
+            const QPolygonF polygon = pixelRectToScreenPolygon(bounds);
+            painter->drawPolygon(polygon.translated(shadowOffset));
 
             painter->setPen(colorPen);
             painter->setBrush(brush);
-            polygon.translate(0, -shadowOffset);
             painter->drawPolygon(polygon);
             break;
         }
-        case MapObject::Polygon: {
-            const QPointF &pos = object->position();
-            const QPolygonF polygon = object->polygon().translated(pos);
-            QPolygonF screenPolygon = pixelToScreenCoords(polygon);
-
-            QPen thickPen(pen);
-            QPen thickColorPen(colorPen);
-            thickPen.setWidthF(thickPen.widthF() * 4);
-            thickColorPen.setWidthF(thickColorPen.widthF() * 4);
-
-            painter->drawPolygon(screenPolygon);
-            painter->setPen(thickPen);
-            painter->drawPoint(screenPolygon.first());
-
-            painter->setPen(colorPen);
-            painter->setBrush(brush);
-            screenPolygon.translate(0, -shadowOffset);
-
-            painter->drawPolygon(screenPolygon);
-            painter->setPen(thickColorPen);
-            painter->drawPoint(screenPolygon.first());
-
-            break;
-        }
+        case MapObject::Polygon:
         case MapObject::Polyline: {
             const QPointF &pos = object->position();
             const QPolygonF polygon = object->polygon().translated(pos);
-            QPolygonF screenPolygon = pixelToScreenCoords(polygon);
+            const QPolygonF screenPolygon = pixelToScreenCoords(polygon);
+            const QPointF pointPos = screenPolygon.isEmpty() ? pos
+                                                             : screenPolygon.first();
 
             QPen thickPen(pen);
             QPen thickColorPen(colorPen);
             thickPen.setWidthF(thickPen.widthF() * 4);
             thickColorPen.setWidthF(thickColorPen.widthF() * 4);
 
-            painter->drawPolyline(screenPolygon);
+            if (object->shape() == MapObject::Polygon)
+                painter->drawPolygon(screenPolygon.translated(shadowOffset));
+            else
+                painter->drawPolyline(screenPolygon.translated(shadowOffset));
             painter->setPen(thickPen);
-            painter->drawPoint(screenPolygon.first());
+            painter->drawPoint(pointPos + shadowOffset);
 
-            pen.setColor(color);
-            painter->setPen(pen);
-            screenPolygon.translate(0, -shadowOffset);
+            painter->setPen(colorPen);
+            painter->setBrush(brush);
 
-            painter->drawPolyline(screenPolygon);
+            if (object->shape() == MapObject::Polygon)
+                painter->drawPolygon(screenPolygon);
+            else
+                painter->drawPolyline(screenPolygon);
             painter->setPen(thickColorPen);
-            painter->drawPoint(screenPolygon.first());
+            painter->drawPoint(pointPos);
+
             break;
         }
         case MapObject::Text:

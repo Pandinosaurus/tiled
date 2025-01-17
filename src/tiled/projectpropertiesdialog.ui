@@ -6,24 +6,33 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>575</width>
-    <height>168</height>
+    <width>586</width>
+    <height>489</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Project Properties</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+  <layout class="QVBoxLayout" name="dialogLayout">
    <item>
-    <widget class="QtGroupBoxPropertyBrowser" name="propertyBrowser" native="true"/>
+    <widget class="QGroupBox" name="groupBox">
+     <property name="title">
+      <string>Custom Properties</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout">
+      <item>
+       <widget class="Tiled::PropertiesWidget" name="propertiesWidget"/>
+      </item>
+     </layout>
+    </widget>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="orientation">
-      <enum>Qt::Horizontal</enum>
+      <enum>Qt::Orientation::Horizontal</enum>
      </property>
      <property name="standardButtons">
-      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
      </property>
     </widget>
    </item>
@@ -31,10 +40,9 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>QtGroupBoxPropertyBrowser</class>
-   <extends>QWidget</extends>
-   <header location="global">QtGroupBoxPropertyBrowser</header>
-   <container>1</container>
+   <class>Tiled::PropertiesWidget</class>
+   <extends>QTreeView</extends>
+   <header>propertieswidget.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -22,8 +22,8 @@
 
 #include "addremovemapobject.h"
 #include "changeobjectgroupproperties.h"
-#include "editablemanager.h"
-#include "editablemap.h"
+#include "editableasset.h"
+#include "map.h"
 #include "scriptmanager.h"
 
 #include <QCoreApplication>
@@ -44,10 +44,9 @@ EditableObjectGroup::EditableObjectGroup(EditableAsset *asset,
 
 QList<QObject *> EditableObjectGroup::objects()
 {
-    auto &editableManager = EditableManager::instance();
     QList<QObject*> objects;
     for (MapObject *object : objectGroup()->objects())
-        objects.append(editableManager.editableMapObject(asset(), object));
+        objects.append(EditableMapObject::get(asset(), object));
     return objects;
 }
 
@@ -59,7 +58,7 @@ EditableMapObject *EditableObjectGroup::objectAt(int index)
     }
 
     auto mapObject = objectGroup()->objectAt(index);
-    return EditableManager::instance().editableMapObject(asset(), mapObject);
+    return EditableMapObject::get(asset(), mapObject);
 }
 
 void EditableObjectGroup::removeObjectAt(int index)
@@ -73,9 +72,9 @@ void EditableObjectGroup::removeObjectAt(int index)
 
     if (auto doc = document()) {
         asset()->push(new RemoveMapObjects(doc, mapObject));
-    } else {
+    } else if (!checkReadOnly()) {
         objectGroup()->removeObjectAt(index);
-        EditableManager::instance().release(mapObject);
+        EditableMapObject::release(mapObject);
     }
 }
 
@@ -105,12 +104,15 @@ void EditableObjectGroup::insertObjectAt(int index, EditableMapObject *editableM
         return;
     }
 
-    auto mapObject = editableMapObject->mapObject();
-
-    if (mapObject->objectGroup()) {
+    if (!editableMapObject->isOwning()) {
         ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Object already part of an object layer"));
         return;
     }
+
+    if (checkReadOnly())
+        return;
+
+    auto mapObject = editableMapObject->mapObject();
 
     // Avoid duplicate IDs by resetting when needed
     if (Map *map = objectGroup()->map()) {
@@ -123,8 +125,8 @@ void EditableObjectGroup::insertObjectAt(int index, EditableMapObject *editableM
         entry.index = index;
         asset()->push(new AddMapObjects(doc, { entry }));
     } else {
-        objectGroup()->insertObject(index, mapObject);
-        editableMapObject->release();   // now owned by the object group
+        // ownership moves to the object group
+        objectGroup()->insertObject(index, editableMapObject->attach(asset()));
     }
 }
 
@@ -133,14 +135,28 @@ void EditableObjectGroup::addObject(EditableMapObject *editableMapObject)
     insertObjectAt(objectCount(), editableMapObject);
 }
 
+/**
+ * This functions exists in addition to EditableLayer::get() because the asset
+ * might also be an EditableTileset in the case of object groups.
+ */
+EditableObjectGroup *EditableObjectGroup::get(EditableAsset *asset, ObjectGroup *objectGroup)
+{
+    if (!objectGroup)
+        return nullptr;
+
+    if (auto editable = EditableLayer::find(objectGroup))
+        return static_cast<EditableObjectGroup*>(editable);
+
+    auto editable = new EditableObjectGroup(asset, objectGroup);
+    editable->moveOwnershipToCpp();
+    return editable;
+}
+
 void EditableObjectGroup::setColor(const QColor &color)
 {
     if (auto doc = document()) {
-        asset()->push(new ChangeObjectGroupProperties(doc,
-                                                      objectGroup(),
-                                                      color,
-                                                      objectGroup()->drawOrder()));
-    } else {
+        asset()->push(new ChangeObjectGroupColor(doc, { objectGroup() }, color));
+    } else if (!checkReadOnly()) {
         objectGroup()->setColor(color);
     }
 }
@@ -148,11 +164,10 @@ void EditableObjectGroup::setColor(const QColor &color)
 void EditableObjectGroup::setDrawOrder(DrawOrder drawOrder)
 {
     if (auto doc = document()) {
-        asset()->push(new ChangeObjectGroupProperties(doc,
-                                                      objectGroup(),
-                                                      color(),
-                                                      static_cast<ObjectGroup::DrawOrder>(drawOrder)));
-    } else {
+        asset()->push(new ChangeObjectGroupDrawOrder(doc,
+                                                     { objectGroup() },
+                                                     static_cast<ObjectGroup::DrawOrder>(drawOrder)));
+    } else if (!checkReadOnly()) {
         objectGroup()->setDrawOrder(static_cast<ObjectGroup::DrawOrder>(drawOrder));
     }
 }

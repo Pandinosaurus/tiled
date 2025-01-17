@@ -24,17 +24,14 @@
 #include "abstracttool.h"
 #include "bucketfilltool.h"
 #include "documentmanager.h"
-#include "mapdocument.h"
 #include "map.h"
+#include "mapdocument.h"
 #include "preferences.h"
 #include "savefile.h"
 #include "stampbrush.h"
-#include "tilelayer.h"
-#include "tileselectiontool.h"
-#include "tileset.h"
-#include "tilesetmanager.h"
 #include "tilestampmodel.h"
 #include "toolmanager.h"
+#include "utils.h"
 
 #include <QDebug>
 #include <QDirIterator>
@@ -45,6 +42,8 @@
 
 using namespace Tiled;
 
+TileStampManager *TileStampManager::ourInstance;
+
 TileStampManager::TileStampManager(const ToolManager &toolManager,
                                    QObject *parent)
     : QObject(parent)
@@ -53,6 +52,9 @@ TileStampManager::TileStampManager(const ToolManager &toolManager,
     , mTileStampModel(new TileStampModel(this))
     , mToolManager(toolManager)
 {
+    Q_ASSERT(!ourInstance);
+    ourInstance = this;
+
     mRegisteredCb = stampsDirectory.onChange([this] { stampsDirectoryChanged(); });
 
     connect(mTileStampModel, &TileStampModel::stampAdded,
@@ -63,8 +65,6 @@ TileStampManager::TileStampManager(const ToolManager &toolManager,
             this, &TileStampManager::saveStamp);
     connect(mTileStampModel, &TileStampModel::stampRemoved,
             this, &TileStampManager::deleteStamp);
-
-    loadStamps();
 }
 
 TileStampManager::~TileStampManager()
@@ -72,6 +72,8 @@ TileStampManager::~TileStampManager()
     // needs to be over here where the TileStamp type is complete
 
     stampsDirectory.unregister(mRegisteredCb);
+
+    ourInstance = nullptr;
 }
 
 static TileStamp stampFromContext(AbstractTool *selectedTool)
@@ -212,7 +214,7 @@ void TileStampManager::loadStamps()
         const QByteArray data = stampFile.readAll();
         const QJsonDocument document = QJsonDocument::fromJson(data, &error);
         if (error.error != QJsonParseError::NoError) {
-            qDebug().noquote() << "Failed to parse stamp file:" << error.errorString();
+            qDebug().noquote() << "Failed to parse stamp file:" << Utils::Error::jsonParseError(error);
             continue;
         }
 

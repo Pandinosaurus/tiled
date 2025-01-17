@@ -21,6 +21,7 @@
 #include "newmapdialog.h"
 #include "ui_newmapdialog.h"
 
+#include "compression.h"
 #include "map.h"
 #include "mapdocument.h"
 #include "maprenderer.h"
@@ -40,8 +41,8 @@ static SessionOption<Map::Orientation> mapOrientation { "map.orientation", Map::
 static SessionOption<Map::LayerDataFormat> layerDataFormat { "map.layerDataFormat", Map::CSV };
 static SessionOption<Map::RenderOrder> renderOrder { "map.renderOrder", Map::RightDown };
 static SessionOption<bool> fixedSize { "map.fixedSize", true };
-static SessionOption<int> mapWidth { "map.width", 100 };
-static SessionOption<int> mapHeight { "map.height", 100 };
+static SessionOption<int> mapWidth { "map.width", 30 };
+static SessionOption<int> mapHeight { "map.height", 20 };
 static SessionOption<int> mapTileWidth { "map.tileWidth", 32 };
 static SessionOption<int> mapTileHeight { "map.tileHeight", 32 };
 } // namespace session
@@ -68,9 +69,6 @@ NewMapDialog::NewMapDialog(QWidget *parent) :
     mUi(new Ui::NewMapDialog)
 {
     mUi->setupUi(this);
-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
-    setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
-#endif
 
     mUi->fixedSizeSpacer->changeSize(Utils::dpiScaled(mUi->fixedSizeSpacer->sizeHint().width()), 0,
                                      mUi->fixedSizeSpacer->sizePolicy().horizontalPolicy());
@@ -78,9 +76,8 @@ NewMapDialog::NewMapDialog(QWidget *parent) :
     mUi->layerFormat->addItem(QCoreApplication::translate("PreferencesDialog", "CSV"), QVariant::fromValue(Map::CSV));
     mUi->layerFormat->addItem(QCoreApplication::translate("PreferencesDialog", "Base64 (uncompressed)"), QVariant::fromValue(Map::Base64));
     mUi->layerFormat->addItem(QCoreApplication::translate("PreferencesDialog", "Base64 (zlib compressed)"), QVariant::fromValue(Map::Base64Zlib));
-#ifdef TILED_ZSTD_SUPPORT
-    mUi->layerFormat->addItem(QCoreApplication::translate("PreferencesDialog", "Base64 (Zstandard compressed)"), QVariant::fromValue(Map::Base64Zstandard));
-#endif
+    if (compressionSupported(Zstandard))
+        mUi->layerFormat->addItem(QCoreApplication::translate("PreferencesDialog", "Base64 (Zstandard compressed)"), QVariant::fromValue(Map::Base64Zstandard));
 
     mUi->renderOrder->addItem(QCoreApplication::translate("PreferencesDialog", "Right Down"), QVariant::fromValue(Map::RightDown));
     mUi->renderOrder->addItem(QCoreApplication::translate("PreferencesDialog", "Right Up"), QVariant::fromValue(Map::RightUp));

@@ -103,6 +103,7 @@ bool JsonMapFormat::write(const Tiled::Map *map,
 
     JsonWriter writer;
     writer.setAutoFormatting(!options.testFlag(WriteMinimized));
+    writer.setAutoFormattingWrapArrayCount(map->infinite() ? map->chunkSize().width() : map->width());
 
     if (!writer.stringify(variant)) {
         // This can only happen due to coding error
@@ -163,8 +164,9 @@ QString JsonMapFormat::shortName() const
 bool JsonMapFormat::supportsFile(const QString &fileName) const
 {
     if (mSubFormat == Json) {
-        if (!fileName.endsWith(QLatin1String(".json"), Qt::CaseInsensitive) &&
-                !fileName.endsWith(QLatin1String(".tmj"), Qt::CaseInsensitive))
+        if (fileName.endsWith(QLatin1String(".tmj"), Qt::CaseInsensitive))
+            return true;
+        if (!fileName.endsWith(QLatin1String(".json"), Qt::CaseInsensitive))
             return false;
     } else {
         if (!fileName.endsWith(QLatin1String(".js"), Qt::CaseInsensitive))
@@ -238,8 +240,9 @@ Tiled::SharedTileset JsonTilesetFormat::read(const QString &fileName)
 
 bool JsonTilesetFormat::supportsFile(const QString &fileName) const
 {
-    if (!fileName.endsWith(QLatin1String(".json"), Qt::CaseInsensitive) &&
-            !fileName.endsWith(QLatin1String(".tsj"), Qt::CaseInsensitive))
+    if (fileName.endsWith(QLatin1String(".tsj"), Qt::CaseInsensitive))
+        return true;
+    if (!fileName.endsWith(QLatin1String(".json"), Qt::CaseInsensitive))
         return false;
 
     QFile file(fileName);
@@ -348,12 +351,13 @@ std::unique_ptr<Tiled::ObjectTemplate> JsonObjectTemplateFormat::read(const QStr
 
 bool JsonObjectTemplateFormat::supportsFile(const QString &fileName) const
 {
-    if (!fileName.endsWith(QLatin1String(".json"), Qt::CaseInsensitive) &&
-            !fileName.endsWith(QLatin1String(".tj"), Qt::CaseInsensitive))
+    if (fileName.endsWith(QLatin1String(".tj"), Qt::CaseInsensitive))
+        return true;
+    if (!fileName.endsWith(QLatin1String(".json"), Qt::CaseInsensitive))
         return false;
 
     QFile file(fileName);
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return false;
 
     const QJsonObject object = QJsonDocument::fromJson(file.readAll()).object();

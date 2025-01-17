@@ -66,7 +66,10 @@ QByteArray ScriptImage::saveToData(const QByteArray &format, int quality)
 
 QJSValue ScriptImage::colorTable() const
 {
-    QJSEngine *engine = ScriptManager::instance().engine();
+    QJSEngine *engine = qjsEngine(this);
+    if (!engine)
+        return QJSValue();
+
     const auto colors = mImage.colorTable();
 
     QJSValue array = engine->newArray(colors.size());
@@ -103,6 +106,11 @@ void ScriptImage::setColorTable(QJSValue colors)
     }
 
     mImage.setColorTable(std::move(colorTable));
+}
+
+ScriptImage *ScriptImage::copy(QRect rect) const
+{
+    return new ScriptImage(mImage.copy(rect));
 }
 
 ScriptImage *ScriptImage::copy(int x, int y, int w, int h) const

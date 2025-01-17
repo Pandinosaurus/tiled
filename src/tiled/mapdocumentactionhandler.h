@@ -22,15 +22,15 @@
 #pragma once
 
 #include <QObject>
-#include "mapobject.h"
 
 class QAction;
 class QMenu;
 
 namespace Tiled {
 
-class ObjectGroup;
 class MapObject;
+class ObjectGroup;
+class ObjectTemplate;
 
 class MapDocument;
 
@@ -92,6 +92,8 @@ public:
 
     QMenu *createNewLayerMenu(QWidget *parent) const;
     QMenu *createGroupLayerMenu(QWidget *parent) const;
+
+    void populateMoveToLayerMenu(QMenu *menu, const ObjectGroup *current);
 
 public slots:
     void cut();

@@ -21,7 +21,7 @@
 #include "editablegrouplayer.h"
 
 #include "addremovelayer.h"
-#include "editablemanager.h"
+#include "addremovetileset.h"
 #include "editablemap.h"
 #include "scriptmanager.h"
 
@@ -42,11 +42,10 @@ EditableGroupLayer::EditableGroupLayer(EditableMap *map, GroupLayer *groupLayer,
 QList<QObject *> EditableGroupLayer::layers()
 {
     QList<QObject *> editables;
-    auto &editableManager = EditableManager::instance();
     auto editableMap = map();
 
     for (const auto layer : groupLayer()->layers())
-        editables.append(editableManager.editableLayer(editableMap, layer));
+        editables.append(EditableLayer::get(editableMap, layer));
 
     return editables;
 }
@@ -59,7 +58,7 @@ EditableLayer *EditableGroupLayer::layerAt(int index)
     }
 
     Layer *layer = groupLayer()->layerAt(index);
-    return EditableManager::instance().editableLayer(map(), layer);
+    return EditableLayer::get(map(), layer);
 }
 
 void EditableGroupLayer::removeLayerAt(int index)
@@ -72,7 +71,7 @@ void EditableGroupLayer::removeLayerAt(int index)
     if (MapDocument *doc = mapDocument())
         asset()->push(new RemoveLayer(doc, index, groupLayer()));
     else if (!checkReadOnly())
-        EditableManager::instance().release(groupLayer()->takeLayerAt(index));
+        EditableLayer::release(groupLayer()->takeLayerAt(index));
 }
 
 void EditableGroupLayer::removeLayer(EditableLayer *editableLayer)
@@ -99,7 +98,7 @@ void EditableGroupLayer::insertLayerAt(int index, EditableLayer *editableLayer)
     }
 
     if (!editableLayer) {
-        ScriptManager::instance().throwError(QCoreApplication::translate("Script Errors", "Invalid argument"));
+        ScriptManager::instance().throwNullArgError(1);
         return;
     }
 
@@ -108,16 +107,32 @@ void EditableGroupLayer::insertLayerAt(int index, EditableLayer *editableLayer)
         return;
     }
 
+    const auto tilesets = editableLayer->layer()->usedTilesets();
+
     if (MapDocument *doc = mapDocument()) {
-        asset()->push(new AddLayer(doc, index, editableLayer->layer(), groupLayer()));
+        auto command = new AddLayer(doc, index, editableLayer->layer(), groupLayer());
+
+        for (const auto &tileset : tilesets)
+            if (!doc->map()->tilesets().contains(tileset))
+                new AddTileset(doc, tileset, command);
+
+        asset()->push(command);
     } else if (!checkReadOnly()) {
+        if (auto map = groupLayer()->map())
+            map->addTilesets(tilesets);
+
         // ownership moves to the group layer
-        groupLayer()->insertLayer(index, editableLayer->release());
+        groupLayer()->insertLayer(index, editableLayer->attach(asset()));
     }
 }
 
 void EditableGroupLayer::addLayer(EditableLayer *editableLayer)
 {
+    if (!editableLayer) {
+        ScriptManager::instance().throwNullArgError(0);
+        return;
+    }
+
     insertLayerAt(layerCount(), editableLayer);
 }
 

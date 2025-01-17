@@ -26,8 +26,6 @@
 
 #include <QFileInfo>
 
-#include "qtcompat_p.h"
-
 namespace Tiled {
 
 FileHelper::FileHelper(const QString &fileName)
@@ -42,6 +40,7 @@ void FileHelper::setFileName(const QString &fileName)
 QStringList FileHelper::relative(const QStringList &fileNames) const
 {
     QStringList result;
+    result.reserve(fileNames.size());
     for (const QString &fileName : fileNames)
         result.append(relative(fileName));
     return result;
@@ -50,12 +49,13 @@ QStringList FileHelper::relative(const QStringList &fileNames) const
 QStringList FileHelper::resolve(const QStringList &fileNames) const
 {
     QStringList result;
+    result.reserve(fileNames.size());
     for (const QString &fileName : fileNames)
         result.append(resolve(fileName));
     return result;
 }
 
-QHash<const char*, Session::Callbacks> Session::mChangedCallbacks;
+QHash<QLatin1String, Session::Callbacks> Session::mChangedCallbacks;
 std::unique_ptr<Session> Session::mCurrent;
 
 Session::Session(const QString &fileName)
@@ -211,7 +211,7 @@ static QString lastPathKey(Session::FileType fileType)
     case Session::ObjectTemplateFile:
         key.append(QLatin1String("objectTemplatePath"));
         break;
-    case Session::ObjectTypesFile:
+    case Session::PropertyTypesFile:
         key.append(QLatin1String("objectTypesPath"));
         break;
     case Session::WorkingDirectory:
@@ -219,6 +219,9 @@ static QString lastPathKey(Session::FileType fileType)
         break;
     case Session::WorldFile:
         key.append(QLatin1String("worldFilePath"));
+        break;
+    case Session::ShortcutSettingsFile:
+        key.append(QLatin1String("shortcutSettingsFilePath"));
         break;
     }
 
@@ -331,7 +334,7 @@ Session &Session::switchCurrent(const QString &fileName)
         migratePreferences();
 
     // Call all registered callbacks because any value may have changed
-    for (const auto &callbacks : qAsConst(mChangedCallbacks))
+    for (const auto &callbacks : std::as_const(mChangedCallbacks))
         for (const auto &callback : callbacks)
             callback();
 

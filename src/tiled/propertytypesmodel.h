@@ -1,6 +1,6 @@
 /*
  * propertytypesmodel.h
- * Copyright 2011, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
+ * Copyright 2011-2022, Thorbjørn Lindeijer <thorbjorn@lindeijer.nl>
  *
  * This file is part of Tiled.
  *
@@ -35,9 +35,10 @@ class PropertyTypesModel : public QAbstractListModel
     Q_OBJECT
 
 public:
-    PropertyTypesModel(QObject *parent = nullptr);
+    PropertyTypesModel(QWidget *parent);
 
     void setPropertyTypes(const SharedPropertyTypes &propertyTypes);
+    SharedPropertyTypes propertyTypes() const;
 
     PropertyType *propertyTypeAt(const QModelIndex &index) const;
 
@@ -47,10 +48,14 @@ public:
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
 
-    void setPropertyTypeName(int row, const QString &name);
+    bool setPropertyTypeName(int row, const QString &name);
     void removePropertyTypes(const QModelIndexList &indexes);
 
     QModelIndex addNewPropertyType(PropertyType::Type type);
+    QModelIndex addPropertyType(std::unique_ptr<PropertyType> type);
+
+    void importPropertyTypes(PropertyTypes typesToImport);
+    void importObjectTypes(const QVector<ObjectType> &objectTypes);
 
     static QIcon iconForPropertyType(PropertyType::Type type);
 
@@ -58,9 +63,17 @@ signals:
     void nameChanged(const QModelIndex &index, const PropertyType &type);
 
 private:
+    bool checkTypeNameUnused(const QString &name) const;
+
     QString nextPropertyTypeName(PropertyType::Type type) const;
 
+    QWidget *mParentWidget;
     SharedPropertyTypes mPropertyTypes;
 };
+
+inline SharedPropertyTypes PropertyTypesModel::propertyTypes() const
+{
+    return mPropertyTypes;
+}
 
 } // namespace Tiled

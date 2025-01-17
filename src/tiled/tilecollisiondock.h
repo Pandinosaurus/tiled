@@ -46,7 +46,7 @@ class TileCollisionDock : public QDockWidget
     Q_OBJECT
 
     Q_PROPERTY(QList<QObject*> selectedObjects READ selectedObjectsForScript WRITE setSelectedObjectsFromScript)
-    Q_PROPERTY(Tiled::MapView *view READ mapView)
+    Q_PROPERTY(Tiled::MapView *view READ mapView CONSTANT)
 
 public:
     enum Operation {
@@ -169,5 +169,3 @@ inline bool TileCollisionDock::hasSelectedObjects() const
 }
 
 } // namespace Tiled
-
-Q_DECLARE_METATYPE(Tiled::TileCollisionDock*)

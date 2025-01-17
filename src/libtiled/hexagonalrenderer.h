@@ -54,8 +54,8 @@ protected:
         bool doStaggerY(int y) const
         { return !staggerX && (y & 1) ^ staggerEven; }
 
-        const int tileWidth;
-        const int tileHeight;
+        int tileWidth;
+        int tileHeight;
         int sideLengthX;
         int sideOffsetX;
         int sideLengthY;
@@ -73,12 +73,10 @@ public:
         setCellType(HexagonalCells);
     }
 
-    QRect mapBoundingRect() const override;
-
     QRect boundingRect(const QRect &rect) const override;
 
     void drawGrid(QPainter *painter, const QRectF &exposed,
-                  QColor gridColor, int gridMajor = 0) const override;
+                  QColor gridColor, QSize gridMajor = QSize()) const override;
 
     QPointF snapToGrid(const QPointF &pixelCoords,
                        int subdivisions) const override;

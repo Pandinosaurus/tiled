@@ -38,17 +38,18 @@
 #include <QImageWriter>
 #include <QJsonDocument>
 #include <QKeyEvent>
+#include <QLayout>
+#include <QLayoutItem>
 #include <QMainWindow>
 #include <QMenu>
 #include <QPainter>
 #include <QProcess>
 #include <QRegularExpression>
-#if QT_VERSION < QT_VERSION_CHECK(5,15,0)
-#include <QRegExp>
-#endif
 #include <QScreen>
 
-#include "qtcompat_p.h"
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0) && QT_VERSION < QT_VERSION_CHECK(6, 5, 1)
+#include <QtCore/qapplicationstatic.h>
+#endif
 
 static QString toImageFileFilter(const QList<QByteArray> &formats)
 {
@@ -106,11 +107,7 @@ QStringList cleanFilterList(const QString &filter)
     QRegularExpressionMatch match = regexp.match(filter);
     if (match.hasMatch())
         f = match.captured(2);
-#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
-    return f.split(QLatin1Char(' '), QString::SkipEmptyParts);
-#else
     return f.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-#endif
 }
 
 /**
@@ -120,25 +117,14 @@ QStringList cleanFilterList(const QString &filter)
 bool fileNameMatchesNameFilter(const QString &filePath,
                                const QString &nameFilter)
 {
-#if QT_VERSION < QT_VERSION_CHECK(5,15,0)
-    QRegExp rx;
-    rx.setCaseSensitivity(Qt::CaseInsensitive);
-    rx.setPatternSyntax(QRegExp::Wildcard);
-#else
     QRegularExpression rx;
     rx.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
-#endif
 
     const QStringList filterList = cleanFilterList(nameFilter);
     const QString fileName = QFileInfo(filePath).fileName();
     for (const QString &filter : filterList) {
-#if QT_VERSION < QT_VERSION_CHECK(5,15,0)
-        rx.setPattern(filter);
-        if (rx.exactMatch(fileName))
-#else
         rx.setPattern(QRegularExpression::wildcardToRegularExpression(filter));
         if (rx.match(fileName).hasMatch())
-#endif
             return true;
     }
     return false;
@@ -218,7 +204,7 @@ static int matchingScore(const QString &word, QStringRef string)
     int score = 1;  // empty word matches
     int previousIndex = -1;
 
-    for (const Match &match : qAsConst(indexes)) {
+    for (const Match &match : std::as_const(indexes)) {
         const int start = match.stringIndex == 0;
         const int sequential = match.stringIndex == previousIndex + 1;
 
@@ -238,7 +224,7 @@ static bool matchingRanges(const QString &word, QStringRef string, int offset, R
     if (!matchingIndexes(word, string, indexes))
         return false;
 
-    for (const Match &match : qAsConst(indexes))
+    for (const Match &match : std::as_const(indexes))
         result.insert(match.stringIndex + offset);
 
     return true;
@@ -280,16 +266,75 @@ RangeSet<int> matchingRanges(const QStringList &words, QStringRef string)
     return result;
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0) && QT_VERSION < QT_VERSION_CHECK(6, 5, 1)
+/*
+ * Caching icons here, since Qt no longer caches null icons in
+ * QIcon::fromTheme.
+ */
+using IconCache = QHash<QString, QIcon>;
+Q_APPLICATION_STATIC(IconCache, iconCache);
+
+QIcon themeIcon(const QString &name)
+{
+    IconCache *cache = iconCache();
+    auto it = cache->find(name);
+    if (it == cache->end())
+        it = cache->insert(name, QIcon::fromTheme(name));
+    return *it;
+}
+#else
+QIcon themeIcon(const QString &name)
+{
+    return QIcon::fromTheme(name);
+}
+#endif
+
 QIcon colorIcon(const QColor &color, QSize size)
 {
     QPixmap pixmap(size);
-    pixmap.fill(color);
+    pixmap.fill(color.isValid() ? color : Qt::transparent);
 
     QPainter painter(&pixmap);
     painter.setPen(QColor(0, 0, 0, 128));
     painter.drawRect(0, 0, size.width() - 1, size.height() - 1);
 
     return QIcon(pixmap);
+}
+
+/**
+ * Returns the available geometry of the screen containing the given \a widget.
+ */
+QRect screenRect(const QWidget *widget)
+{
+    const QPoint center = widget->mapToGlobal(widget->rect().center());
+    const QScreen *screen = widget->screen()->virtualSiblingAt(center);
+    if (!screen)
+        screen = widget->screen();
+    return screen->availableGeometry();
+}
+
+/**
+ * Returns the suitable geometry for a popup of the given \a popupSize,
+ * relative to the \a parent widget.
+ */
+QRect popupGeometry(const QWidget *parent, QSize popupSize)
+{
+    const QRect screen = screenRect(parent);
+    const QSize widgetSize = parent->size();
+    QPoint pos = parent->mapToGlobal(QPoint(0, widgetSize.height()));
+
+    // Move popup up when there is not enough space below
+    if (pos.y() + popupSize.height() > screen.bottom())
+        pos.ry() -= widgetSize.height() + popupSize.height();
+
+    // Align popup to the right when expected
+    if (parent->isRightToLeft())
+        pos.rx() += widgetSize.width() - popupSize.width();
+
+    // Make sure the popup is visible on the sides of the screen
+    pos.rx() = qBound(screen.left(), pos.x(), screen.right() - popupSize.width());
+
+    return QRect(pos, popupSize);
 }
 
 /**
@@ -485,7 +530,7 @@ void addFileManagerActions(QMenu &menu, const QString &fileName)
     if (fileName.isEmpty())
         return;
 
-    menu.addAction(QCoreApplication::translate("Utils", "Copy File Path"), [fileName] {
+    menu.addAction(QCoreApplication::translate("Utils", "Copy File Path"), &menu, [fileName] {
         QApplication::clipboard()->setText(QDir::toNativeSeparators(fileName));
     });
 
@@ -494,14 +539,14 @@ void addFileManagerActions(QMenu &menu, const QString &fileName)
 
 void addOpenContainingFolderAction(QMenu &menu, const QString &fileName)
 {
-    menu.addAction(QCoreApplication::translate("Utils", "Open Containing Folder..."), [fileName] {
+    menu.addAction(QCoreApplication::translate("Utils", "Open Containing Folder..."), &menu, [fileName] {
         showInFileManager(fileName);
     });
 }
 
 void addOpenWithSystemEditorAction(QMenu &menu, const QString &fileName)
 {
-    menu.addAction(QCoreApplication::translate("Utils", "Open with System Editor"), [=] {
+    menu.addAction(QCoreApplication::translate("Utils", "Open with System Editor"), &menu, [=] {
         QDesktopServices::openUrl(QUrl::fromLocalFile(fileName));
     });
 }
@@ -530,6 +575,28 @@ QSettings::Format jsonSettingsFormat()
 std::unique_ptr<QSettings> jsonSettings(const QString &fileName)
 {
     return std::make_unique<QSettings>(fileName, jsonSettingsFormat());
+}
+
+QString Error::jsonParseError(QJsonParseError error)
+{
+    return QCoreApplication::translate("File Errors",
+                                       "JSON parse error at offset %1:\n%2.").arg(error.offset).arg(error.errorString());
+
+}
+
+/**
+ * Recursively deletes all items and their widgets from the given layout.
+ */
+void deleteAllFromLayout(QLayout *layout)
+{
+    while (QLayoutItem *item = layout->takeAt(0)) {
+        delete item->widget();
+
+        if (QLayout *layout = item->layout())
+            deleteAllFromLayout(layout);
+
+        delete item;
+    }
 }
 
 } // namespace Utils

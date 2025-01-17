@@ -1,6 +1,7 @@
 /*
  * wangset.h
  * Copyright 2017, Benjamin Trotter <bdtrotte@ucsc.edu>
+ *
  * This file is part of libtiled.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -46,7 +47,7 @@ public:
     constexpr static unsigned BITS_PER_INDEX = 8;
     constexpr static quint64 INDEX_MASK = 0xFF;
     constexpr static quint64 FULL_MASK = Q_UINT64_C(0xFFFFFFFFFFFFFFFF);
-    constexpr static int MAX_COLOR_COUNT = (1 << BITS_PER_INDEX) - 1;
+    constexpr static int MAX_COLOR_COUNT = (1 << BITS_PER_INDEX) - 2;
 
     enum Index {
         Top         = 0,
@@ -73,6 +74,11 @@ public:
         MaskLeft        = INDEX_MASK << (BITS_PER_INDEX * Left),
         MaskTopLeft     = INDEX_MASK << (BITS_PER_INDEX * TopLeft),
 
+        MaskTopSide     = MaskTopLeft | MaskTop | MaskTopRight,
+        MaskRightSide   = MaskTopRight | MaskRight | MaskBottomRight,
+        MaskBottomSide  = MaskBottomLeft | MaskBottom | MaskBottomRight,
+        MaskLeftSide    = MaskTopLeft | MaskLeft | MaskBottomLeft,
+
         MaskEdges       = MaskTop | MaskRight | MaskBottom | MaskLeft,
         MaskCorners     = MaskTopRight | MaskBottomRight | MaskBottomLeft | MaskTopLeft,
     };
@@ -81,6 +87,8 @@ public:
 
     constexpr operator quint64() const { return mId; }
     inline void setId(quint64 id) { mId = id; }
+
+    bool isEmpty() const { return mId == 0; }
 
     int edgeColor(int index) const;
     int cornerColor(int index) const;
@@ -94,12 +102,13 @@ public:
     void setIndexColor(int index, unsigned value);
 
     void updateToAdjacent(WangId adjacent, int position);
+    void mergeWith(WangId wangId, WangId mask);
 
     bool hasWildCards() const;
     bool hasCornerWildCards() const;
     bool hasEdgeWildCards() const;
-    quint64 mask() const;
-    quint64 mask(int value) const;
+    WangId mask() const;
+    WangId mask(int value) const;
 
     bool hasCornerWithColor(int value) const;
     bool hasEdgeWithColor(int value) const;
@@ -110,6 +119,11 @@ public:
     void flipVertically();
     WangId flippedHorizontally() const;
     WangId flippedVertically() const;
+
+    bool operator==(WangId other) const { return mId == other.mId; }
+    bool operator!=(WangId other) const { return mId != other.mId; }
+    WangId operator& (quint64 mask) const { return mId & mask; }
+    WangId operator&=(quint64 mask) { return mId &= mask; }
 
     static Index indexByGrid(int x, int y);
     static Index oppositeIndex(int index);
@@ -126,6 +140,11 @@ public:
 private:
     quint64 mId;
 };
+
+inline void WangId::mergeWith(WangId wangId, WangId mask)
+{
+    *this = (*this & ~mask) | (wangId & mask);
+}
 
 inline WangId::Index WangId::oppositeIndex(int index)
 {
@@ -239,6 +258,7 @@ public:
             const QString &name,
             Type type,
             int imageTileId = -1);
+    ~WangSet();
 
     Tileset *tileset() const;
     void setTileset(Tileset *tileset);
@@ -248,6 +268,8 @@ public:
 
     Type type() const;
     void setType(Type type);
+
+    WangId typeMask() const;
 
     int imageTileId() const;
     void setImageTileId(int imageTileId);
@@ -277,9 +299,6 @@ public:
 
     QList<WangTile> sortedWangTiles() const;
 
-    WangId wangIdFromSurrounding(const WangId surroundingWangIds[]) const;
-    WangId wangIdFromSurrounding(const Cell surroundingCells[]) const;
-
     WangId wangIdOfTile(const Tile *tile) const;
     WangId wangIdOfCell(const Cell &cell) const;
 
@@ -298,6 +317,8 @@ public:
     bool isComplete() const;
     quint64 completeSetSize() const;
 
+    Type effectiveTypeForColor(int color) const;
+
     WangId templateWangIdAt(unsigned n) const;
 
     WangSet *clone(Tileset *tileset) const;
@@ -312,6 +333,7 @@ private:
     Tileset *mTileset;
     QString mName;
     Type mType;
+    WangId mTypeMask;
     int mImageTileId;
 
     // How many unique, full WangIds are active in this set.
@@ -355,13 +377,9 @@ inline WangSet::Type WangSet::type() const
     return mType;
 }
 
-/**
- * Changes the type of this Wang set. Does not modify any WangIds to make sure
- * they adhere to the type!
- */
-inline void WangSet::setType(WangSet::Type type)
+inline WangId WangSet::typeMask() const
 {
-    mType = type;
+    return mTypeMask;
 }
 
 inline int WangSet::imageTileId() const
@@ -406,5 +424,6 @@ TILEDSHARED_EXPORT WangSet::Type wangSetTypeFromString(const QString &);
 
 } // namespace Tiled
 
-Q_DECLARE_METATYPE(Tiled::WangSet*)
 Q_DECLARE_METATYPE(Tiled::WangId)
+Q_DECLARE_METATYPE(Tiled::WangSet*)
+Q_DECLARE_METATYPE(Tiled::WangSet::Type)
